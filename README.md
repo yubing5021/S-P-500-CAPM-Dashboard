@@ -1,7 +1,111 @@
-# S-P-500-CAPM-Dashboard
+# S&P 500 CAPM Dashboard
+
 A SP 500 return dashboard that analyzes and decompose stock and sector returns into market, sector, and company components. Using excess returns, rolling betas, alpha t-statistics, and Sharpe ratios, it evaluates whether observed performance reflects consistent abnormal returns in correlation to the risk taken. 
-CAPM Project Summary:
-The CAPM project constructs a S&P 500 return dashboard and applies rolling, factor-aware attribution to analyze and decompose stock and sector returns into market, sector, and company components. Using excess returns, rolling betas, alpha t-statistics, and Sharpe ratios, it evaluates whether observed performance reflects consistent abnormal returns in correlation to the risk taken. 
+
+---
+
+## 🚀 Live Demo
+> (Add your Streamlit Cloud URL here after deployment)
+
+---
+
+## 📊 Key Features
+
+- **Sector & Ticker Selection**
+  - Multi-select S&P 500 sectors
+  - Multi-select tickers labeled as `TICKER (Company Name)`
+
+- **Cumulative Performance**
+  - Growth of $1 for:
+    - Market
+    - Selected sectors
+    - Selected individual stocks
+
+- **Rolling CAPM Analysis**
+  - Rolling **beta** and **alpha** vs:
+    - Market benchmark
+    - Sector benchmark
+  - Configurable estimation windows:
+    - 52 weeks (short-term)
+    - 156 weeks (structural)
+
+- **Statistical Diagnostics**
+  - Rolling **alpha t-statistics**
+  - ±2 significance bands (~5% heuristic)
+  - Full regression outputs:
+    - Alpha
+    - Beta
+    - t-stats
+    - R² and Adjusted R²
+
+- **Discount Rate Estimation**
+  - CAPM discount rate:
+    ```
+    Discount Rate = Risk-Free Rate + β × Market Risk Premium
+    ```
+  - Annualized (log-return approximation)
+  - Option to use:
+    - Historical MRP
+    - Custom user-defined MRP
+
+- **Macro Context**
+  - Weekly and rolling annualized:
+    - Risk-free rate
+    - Market risk premium
+  - Cumulative growth comparison: Market vs Risk-Free
+
+- **Export Functionality**
+  - Download CSVs for:
+    - Cumulative returns
+    - Rolling CAPM metrics
+    - Discount rates
+    - Summary statistics
+
+---
+
+## 🧠 Methodology Overview
+
+- **Returns**
+  - Weekly **log returns**
+  - Excess returns calculated as:
+    ```
+    Excess Return = Asset Return − Risk-Free Rate
+    ```
+
+- **CAPM Estimation**
+  - OLS regression:
+    ```
+    Ri − Rf = α + β (Rm − Rf) + ε
+    ```
+  - Rolling window estimation for time-varying risk exposure
+
+- **Annualization**
+  - Mean log returns × 52
+  - Volatility × √52
+
+- **Statistical Interpretation**
+  - **Beta**: systematic market exposure
+  - **Alpha**: abnormal return beyond CAPM
+  - **t-stats**: statistical significance
+  - **R² / Adj R²**: explanatory power of the market factor
+
+---
+
+## 🗂 Repository Structure
+
+capm-dashboard/
+│
+├── CAPM_Dashboard.py # Main Streamlit application
+├── requirements.txt # Python dependencies
+├── README.md # Project documentation
+│
+├── data/
+│ ├── sp500_stock_panel.csv # Weekly stock-level return panel
+│ └── sector_returns.csv # Weekly sector return series
+│
+└── .streamlit/
+└── config.toml # Optional UI theming
+
 
 Key Terms
 
