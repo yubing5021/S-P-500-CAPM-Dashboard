@@ -45,13 +45,6 @@ import streamlit as st
 st.set_page_config(page_title="CAPM Dashboard", layout="wide")
 st.title("S&P 500 CAPM Dashboard")
 
-# ------------------------------------------------------------
-# Narration (in-app): the dashboard is organized to mirror CAPM workflow
-#  1) Inspect market/risk-free inputs (RF and MRP)
-#  2) Review cumulative performance
-#  3) Estimate rolling beta/alpha (excess returns)
-#  4) Translate beta + MRP into an implied discount rate
-# ------------------------------------------------------------
 st.markdown(
     """
     This dashboard implements a weekly **log-return** CAPM workflow.
@@ -68,7 +61,7 @@ st.markdown(
 
 
 # ============================================================
-# 2) PATHS (CONSISTENT WITH PIPELINE OUTPUTS)
+# 2) PATHS (REPO-FIRST, WITH LOCAL DEV FALLBACK)
 # ============================================================
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -77,14 +70,9 @@ if not DATA_DIR.exists():
     # fallback to local OneDrive dev path
     DATA_DIR = Path.home() / "OneDrive" / "Desktop" / "S&P 500 Scrapper" / "sp500_outputs"
 
-PANEL_PATH = DATA_DIR / "sp500_stock_panel.csv"
 SECTOR_RETURNS_PATH = DATA_DIR / "sector_returns.csv"
 
-st.caption(f"Data directory: {BASE_DIR}")
-
-if not PANEL_PATH.exists():
-    st.error(f"Missing file: {PANEL_PATH}")
-    st.stop()
+st.caption(f"Data directory: {DATA_DIR}")
 
 if not SECTOR_RETURNS_PATH.exists():
     st.error(f"Missing file: {SECTOR_RETURNS_PATH}")
@@ -92,16 +80,37 @@ if not SECTOR_RETURNS_PATH.exists():
 
 
 # ============================================================
-# 3) LOAD DATA
+# 3) LOAD DATA (REMOTE PANEL + LOCAL SECTOR FILE)
 # ============================================================
 @st.cache_data(show_spinner=False)
-def load_data(panel_path: Path, sector_returns_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    panel_df = pd.read_csv(panel_path, parse_dates=["Date"])
+def load_panel_from_url(url: str) -> pd.DataFrame:
+    # Note: for Dropbox links, you typically want dl=1 (direct download).
+    return pd.read_csv(url, parse_dates=["Date"])
+
+
+@st.cache_data(show_spinner=False)
+def load_data(sector_returns_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if "PANEL_URL" not in st.secrets:
+        raise KeyError(
+            "Missing PANEL_URL in Streamlit secrets. Add it in .streamlit/secrets.toml (local) "
+            "or in Streamlit Community Cloud app settings."
+        )
+
+    panel_url = st.secrets["PANEL_URL"]
+    panel_df = load_panel_from_url(panel_url)
+
     sector_df = pd.read_csv(sector_returns_path, parse_dates=["Date"])
     return panel_df, sector_df
 
 
-panel, sector_returns = load_data(PANEL_PATH, SECTOR_RETURNS_PATH)
+# ---- Safe wrapper: load ONCE, stop cleanly on failure ----
+try:
+    panel, sector_returns = load_data(SECTOR_RETURNS_PATH)
+except Exception as e:
+    st.error("Failed to load required data (panel from PANEL_URL and/or local sector_returns.csv).")
+    st.exception(e)
+    st.stop()
+
 panel = panel.sort_values(["Date", "Ticker"]).reset_index(drop=True)
 sector_returns = sector_returns.sort_values(["Date", "Sector"]).reset_index(drop=True)
 
@@ -273,6 +282,7 @@ def rolling_alpha_beta(excess_y: pd.Series, excess_x: pd.Series, window: int) ->
 
     return pd.DataFrame({"beta": betas, "alpha": alphas}, index=pd.Index(dates, name="Date"))
 
+
 def rolling_capm_tstats(excess_y: pd.Series, excess_x: pd.Series, window: int) -> pd.DataFrame:
     """
     Rolling CAPM with classic OLS t-stats:
@@ -333,6 +343,7 @@ def rolling_capm_tstats(excess_y: pd.Series, excess_x: pd.Series, window: int) -
         index=pd.Index(dates, name="Date"),
     )
 
+
 # ----------------------------
 # Presentation formatting
 # ----------------------------
@@ -368,7 +379,6 @@ def apply_axis_and_hover_format(fig, sig: int, y_is_percent: bool, y_label: str)
     fig.update_yaxes(title=y_label, tickformat=f".{sig}g", ticksuffix="%" if y_is_percent else None)
     fig.update_xaxes(tickformat=None)
 
-    # Use a generic hover template; Plotly will substitute y values.
     if y_is_percent:
         fig.update_traces(hovertemplate=f"Date=%{{x}}<br>{y_label}=%{{y:.{sig}g}}%<extra></extra>")
     else:
@@ -380,7 +390,6 @@ def apply_axis_and_hover_format(fig, sig: int, y_is_percent: bool, y_label: str)
 # ============================================================
 st.sidebar.header("Controls")
 
-# Precision + percent toggles (new)
 st.sidebar.subheader("Display Formatting")
 DISPLAY_SIG_FIGS = st.sidebar.slider("Significant figures (display)", min_value=2, max_value=6, value=3, step=1)
 DISPLAY_PCT = st.sidebar.checkbox("Display rates as percent (%)", value=True)
@@ -414,7 +423,6 @@ if has_company_name:
 
 
 def ticker_label(t: str) -> str:
-    """UI label: TICKER (Company Name)."""
     nm = ticker_name_map.get(t)
     return f"{t} ({nm})" if nm else t
 
@@ -434,39 +442,29 @@ if not selected_tickers:
     st.stop()
 
 st.sidebar.subheader("Estimation Horizon")
-# Narration: This horizon controls the trailing window used for rolling CAPM estimates
-# (beta/alpha/t-stats) and for the “structural” macro trends (RF and MRP).
 horizon_weeks = st.sidebar.radio(
     "Select horizon (weeks)",
     options=[52, 156],
     index=1,
-    help="52w = more responsive but noisier; 156w (~3y) = more stable, cycle-aware estimates."
+    help="52w = more responsive but noisier; 156w (~3y) = more stable, cycle-aware estimates.",
 )
 apply_winsor = st.sidebar.checkbox("Winsorize weekly returns (1%)", value=False)
 
 st.sidebar.divider()
 exports_enabled = st.sidebar.checkbox("Enable downloads", value=True)
-# ============================================================
-# 7) BUILD ALIGNED SERIES
-# ============================================================
 
-# IMPORTANT FIX:
-# Do NOT use drop_duplicates("Date") here.
-# Your panel has many rows per Date (one per ticker). drop_duplicates can keep a row
-# where RF_Log_Return is NaN (even if other rows that date have RF populated),
-# which then propagates NaNs into cumulative charts and can blank them out.
 
+# ============================================================
+# 7) BUILD ALIGNED SERIES (IMPORTANT FIX: groupby mean)
+# ============================================================
 mkt_rf = (
     panel.groupby("Date", as_index=True)[["Market_Log_Return", "RF_Log_Return"]]
-    .mean()            # mean ignores NaNs
+    .mean()
     .sort_index()
 )
 
-# Fill gaps (RF series can have missing points depending on your source alignment)
 mkt_rf["RF_Log_Return"] = mkt_rf["RF_Log_Return"].ffill().bfill()
 mkt_rf["Market_Log_Return"] = mkt_rf["Market_Log_Return"].ffill().bfill()
-
-# Drop any remaining missing observations (should be rare after fill)
 mkt_rf = mkt_rf.dropna(subset=["Market_Log_Return", "RF_Log_Return"])
 
 sectors_wide = (
@@ -498,7 +496,6 @@ if apply_winsor:
     for c in stocks_wide.columns:
         stocks_wide[c] = winsorize(stocks_wide[c])
 
-# Excess returns (CAPM core)
 excess_market = mkt_rf["Market_Log_Return"] - mkt_rf["RF_Log_Return"]
 excess_stocks = stocks_wide.sub(mkt_rf["RF_Log_Return"], axis=0)
 excess_sectors = sectors_wide.sub(mkt_rf["RF_Log_Return"], axis=0)
@@ -513,6 +510,7 @@ aligned_panel = pd.concat(
     ],
     axis=1,
 )
+
 
 # ============================================================
 # 8) DISCOUNT RATE SETTINGS
@@ -546,7 +544,6 @@ for t in stocks_wide.columns:
 
 cum_long = cum.reset_index().melt(id_vars="Date", var_name="Series", value_name="Growth")
 fig_cum = px.line(cum_long, x="Date", y="Growth", color="Series")
-# Growth is a level (not percent). Still apply sig-fig tickformat for readability.
 fig_cum.update_yaxes(tickformat=f".{DISPLAY_SIG_FIGS}g")
 fig_cum.update_traces(hovertemplate=f"Date=%{{x}}<br>Growth=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>")
 st.plotly_chart(fig_cum, use_container_width=True)
@@ -586,7 +583,6 @@ with tab_weekly:
         }
     ).dropna()
 
-    # Display convenience: optionally scale to %
     if DISPLAY_PCT:
         df_weekly["Risk-Free"] *= 100.0
         df_weekly["Market Risk Premium"] *= 100.0
@@ -597,18 +593,11 @@ with tab_weekly:
         y_is_pct = False
 
     df_weekly_melt = df_weekly.melt(id_vars="Date", var_name="Series", value_name="Value")
-    fig_weekly = px.line(
-        df_weekly_melt,
-        x="Date",
-        y="Value",
-        color="Series",
-        title="Weekly Risk-Free Rate and Market Risk Premium",
-    )
+    fig_weekly = px.line(df_weekly_melt, x="Date", y="Value", color="Series", title="Weekly Risk-Free Rate and Market Risk Premium")
     apply_axis_and_hover_format(fig_weekly, DISPLAY_SIG_FIGS, y_is_percent=y_is_pct, y_label=y_label)
     st.plotly_chart(fig_weekly, use_container_width=True)
 
 with tab_roll:
-    # Rolling annualized (log-approx): mean weekly log return × 52
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * 52.0
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * 52.0
 
@@ -630,13 +619,7 @@ with tab_roll:
         y_is_pct = False
 
     df_roll_melt = df_roll.melt(id_vars="Date", var_name="Series", value_name="Value")
-    fig_roll = px.line(
-        df_roll_melt,
-        x="Date",
-        y="Value",
-        color="Series",
-        title=f"Rolling Annualized RF and MRP ({horizon_weeks}-week mean × 52)",
-    )
+    fig_roll = px.line(df_roll_melt, x="Date", y="Value", color="Series", title=f"Rolling Annualized RF and MRP ({horizon_weeks}-week mean × 52)")
     apply_axis_and_hover_format(fig_roll, DISPLAY_SIG_FIGS, y_is_percent=y_is_pct, y_label=y_label)
     st.plotly_chart(fig_roll, use_container_width=True)
 
@@ -650,20 +633,14 @@ with tab_cum_rf:
     ).dropna()
 
     df_cum_rf_melt = df_cum_rf.melt(id_vars="Date", var_name="Series", value_name="Value")
-    fig_cum_rf = px.line(
-        df_cum_rf_melt,
-        x="Date",
-        y="Value",
-        color="Series",
-        title="Cumulative Growth of $1: Market vs Risk-Free",
-    )
+    fig_cum_rf = px.line(df_cum_rf_melt, x="Date", y="Value", color="Series", title="Cumulative Growth of $1: Market vs Risk-Free")
     apply_axis_and_hover_format(fig_cum_rf, DISPLAY_SIG_FIGS, y_is_percent=False, y_label="$1 growth")
     st.plotly_chart(fig_cum_rf, use_container_width=True)
+
 
 # ============================================================
 # 10) ROLLING BETA/ALPHA + ROLLING DISCOUNT RATE
 # ============================================================
-
 st.subheader("Rolling Beta, Alpha, and Discount Rate (Excess Returns)")
 
 tab_mkt, tab_sec, tab_disc, tab_tstat = st.tabs(
@@ -675,9 +652,6 @@ tab_mkt, tab_sec, tab_disc, tab_tstat = st.tabs(
     ]
 )
 
-# -------------------------
-# 10A) Rolling vs Market
-# -------------------------
 with tab_mkt:
     rows = []
     for t in excess_stocks.columns:
@@ -693,12 +667,10 @@ with tab_mkt:
     else:
         df_rm = pd.concat(rows, ignore_index=True)
 
-        # Beta chart
         fig_beta = px.line(df_rm, x="Date", y="beta", color="Label", title="Rolling Beta vs Market")
         apply_axis_and_hover_format(fig_beta, DISPLAY_SIG_FIGS, y_is_percent=False, y_label="Beta")
         st.plotly_chart(fig_beta, use_container_width=True)
 
-        # Alpha chart (weekly)
         df_alpha = df_rm.copy()
         if DISPLAY_PCT:
             df_alpha["alpha_disp"] = df_alpha["alpha"] * 100.0
@@ -714,9 +686,7 @@ with tab_mkt:
             export_rm = df_rm.copy()
             if FORMAT_EXPORTS:
                 for col in ["beta", "alpha"]:
-                    export_rm[col] = export_rm[col].map(
-                        lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                    )
+                    export_rm[col] = export_rm[col].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
             st.download_button(
                 "Download rolling vs market (CSV)",
                 export_rm.to_csv(index=False).encode("utf-8"),
@@ -724,9 +694,6 @@ with tab_mkt:
                 "text/csv",
             )
 
-# -------------------------
-# 10B) Rolling vs Sector Benchmark
-# -------------------------
 with tab_sec:
     rows = []
     for t in excess_stocks.columns:
@@ -743,23 +710,18 @@ with tab_sec:
             rows.append(rr)
 
     if not rows:
-        st.warning("No rolling results vs sector benchmark. Try a smaller window (e.g., 52).")
+        st.warning("No rolling results vs sector benchmark. Try a smaller rolling window (e.g., 52).")
     else:
         df_rs = pd.concat(rows, ignore_index=True)
 
-        # Beta chart
         fig_beta_s = px.line(
-            df_rs,
-            x="Date",
-            y="beta",
-            color="Label",
+            df_rs, x="Date", y="beta", color="Label",
             title="Rolling Beta vs Sector Benchmark",
             hover_data=["Sector_Benchmark"],
         )
         apply_axis_and_hover_format(fig_beta_s, DISPLAY_SIG_FIGS, y_is_percent=False, y_label="Beta")
         st.plotly_chart(fig_beta_s, use_container_width=True)
 
-        # Alpha chart (weekly)
         df_alpha_s = df_rs.copy()
         if DISPLAY_PCT:
             df_alpha_s["alpha_disp"] = df_alpha_s["alpha"] * 100.0
@@ -768,10 +730,7 @@ with tab_sec:
             ycol, ylab, is_pct = "alpha", "Alpha (weekly)", False
 
         fig_alpha_s = px.line(
-            df_alpha_s,
-            x="Date",
-            y=ycol,
-            color="Label",
+            df_alpha_s, x="Date", y=ycol, color="Label",
             title="Rolling Alpha vs Sector Benchmark (weekly)",
             hover_data=["Sector_Benchmark"],
         )
@@ -782,9 +741,7 @@ with tab_sec:
             export_rs = df_rs.copy()
             if FORMAT_EXPORTS:
                 for col in ["beta", "alpha"]:
-                    export_rs[col] = export_rs[col].map(
-                        lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                    )
+                    export_rs[col] = export_rs[col].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
             st.download_button(
                 "Download rolling vs sector (CSV)",
                 export_rs.to_csv(index=False).encode("utf-8"),
@@ -792,9 +749,6 @@ with tab_sec:
                 "text/csv",
             )
 
-# -------------------------
-# 10C) Rolling Discount Rate
-# -------------------------
 with tab_disc:
     st.caption(
         "Discount rate (annualized, log approx): RF_annual + beta_rolling * MRP_annual. "
@@ -804,7 +758,6 @@ with tab_disc:
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
 
-    # If custom MRP is enabled, treat MRP as constant; otherwise use rolling MRP.
     mrp_used_ann = pd.Series(mrp_annual_log, index=common_dates) if use_custom_mrp else mrp_roll_ann
 
     disc_rows = []
@@ -818,14 +771,10 @@ with tab_disc:
         mrp_part = mrp_used_ann.loc[beta_roll.index]
         disc = rf_part + beta_roll * mrp_part
 
-        disc_rows.append(
-            pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values})
-        )
+        disc_rows.append(pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values}))
 
     if not disc_rows:
-        st.warning(
-            "No rolling discount rate available. Try a smaller window (e.g., 52) or choose tickers with longer history."
-        )
+        st.warning("No rolling discount rate available. Try a smaller window (e.g., 52) or choose tickers with longer history.")
     else:
         df_disc = pd.concat(disc_rows, ignore_index=True)
 
@@ -836,22 +785,14 @@ with tab_disc:
         else:
             ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
 
-        fig_disc = px.line(
-            df_disc_plot,
-            x="Date",
-            y=ycol,
-            color="Label",
-            title="Rolling Discount Rate (Annualized, log approx)",
-        )
+        fig_disc = px.line(df_disc_plot, x="Date", y=ycol, color="Label", title="Rolling Discount Rate (Annualized, log approx)")
         apply_axis_and_hover_format(fig_disc, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
         st.plotly_chart(fig_disc, use_container_width=True)
 
         if exports_enabled:
             export_disc = df_disc.copy()
             if FORMAT_EXPORTS:
-                export_disc["DiscountRate"] = export_disc["DiscountRate"].map(
-                    lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                )
+                export_disc["DiscountRate"] = export_disc["DiscountRate"].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
             st.download_button(
                 "Download rolling discount rate (CSV)",
                 export_disc.to_csv(index=False).encode("utf-8"),
@@ -859,23 +800,15 @@ with tab_disc:
                 "text/csv",
             )
 
-# -------------------------
-# 10D) Rolling Alpha t-Stats
-# -------------------------
 with tab_tstat:
     st.caption(
         "Rolling alpha t-statistics from a rolling CAPM regression. "
         "Dashed lines at ±2 indicate a common ~5% significance heuristic."
     )
 
-    model_choice = st.radio(
-        "Alpha t-stat model",
-        ["Vs Market", "Vs Sector Benchmark"],
-        horizontal=True,
-    )
+    model_choice = st.radio("Alpha t-stat model", ["Vs Market", "Vs Sector Benchmark"], horizontal=True)
 
     rows = []
-
     if model_choice == "Vs Market":
         for t in excess_stocks.columns:
             r = rolling_capm_tstats(excess_stocks[t], excess_market, horizon_weeks)
@@ -888,31 +821,18 @@ with tab_tstat:
             st.warning("No rolling alpha t-stats vs market. Try a smaller window (e.g., 52).")
         else:
             df_rt = pd.concat(rows, ignore_index=True)
-
-            fig = px.line(
-                df_rt,
-                x="Date",
-                y="alpha_t",
-                color="Label",
-                title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Market)",
-            )
+            fig = px.line(df_rt, x="Date", y="alpha_t", color="Label", title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Market)")
             fig.add_hline(y=2, line_dash="dash", line_color="gray")
             fig.add_hline(y=-2, line_dash="dash", line_color="gray")
-
             fig.update_yaxes(title="Alpha t-stat", tickformat=f".{DISPLAY_SIG_FIGS}g")
-            fig.update_traces(
-                hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>"
-            )
-
+            fig.update_traces(hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>")
             st.plotly_chart(fig, use_container_width=True)
 
             if exports_enabled:
                 export_df = df_rt[["Date", "Label", "alpha", "beta", "alpha_t", "beta_t"]].copy()
                 if FORMAT_EXPORTS:
                     for c in ["alpha", "beta", "alpha_t", "beta_t"]:
-                        export_df[c] = export_df[c].map(
-                            lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                        )
+                        export_df[c] = export_df[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
                 st.download_button(
                     "Download rolling alpha t-stats vs market (CSV)",
                     export_df.to_csv(index=False).encode("utf-8"),
@@ -920,7 +840,7 @@ with tab_tstat:
                     "text/csv",
                 )
 
-    else:  # Vs Sector Benchmark
+    else:
         for t in excess_stocks.columns:
             sec = selected_ticker_sector.get(t)
             if sec not in excess_sectors.columns:
@@ -937,40 +857,25 @@ with tab_tstat:
             st.warning("No rolling alpha t-stats vs sector benchmark. Try a smaller window (e.g., 52).")
         else:
             df_rt = pd.concat(rows, ignore_index=True)
-
-            fig = px.line(
-                df_rt,
-                x="Date",
-                y="alpha_t",
-                color="Label",
-                title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Sector Benchmark)",
-                hover_data=["Sector_Benchmark"],
-            )
+            fig = px.line(df_rt, x="Date", y="alpha_t", color="Label", title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Sector Benchmark)", hover_data=["Sector_Benchmark"])
             fig.add_hline(y=2, line_dash="dash", line_color="gray")
             fig.add_hline(y=-2, line_dash="dash", line_color="gray")
-
             fig.update_yaxes(title="Alpha t-stat", tickformat=f".{DISPLAY_SIG_FIGS}g")
-            fig.update_traces(
-                hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>"
-            )
-
+            fig.update_traces(hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>")
             st.plotly_chart(fig, use_container_width=True)
 
             if exports_enabled:
-                export_df = df_rt[
-                    ["Date", "Label", "Sector_Benchmark", "alpha", "beta", "alpha_t", "beta_t"]
-                ].copy()
+                export_df = df_rt[["Date", "Label", "Sector_Benchmark", "alpha", "beta", "alpha_t", "beta_t"]].copy()
                 if FORMAT_EXPORTS:
                     for c in ["alpha", "beta", "alpha_t", "beta_t"]:
-                        export_df[c] = export_df[c].map(
-                            lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                        )
+                        export_df[c] = export_df[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
                 st.download_button(
                     "Download rolling alpha t-stats vs sector (CSV)",
                     export_df.to_csv(index=False).encode("utf-8"),
                     "rolling_alpha_tstats_vs_sector.csv",
                     "text/csv",
                 )
+
 
 # ============================================================
 # 11) SUMMARY METRICS (ANNUALIZED) + DISCOUNT RATE + R2 / ADJ R2
@@ -1018,10 +923,8 @@ for t in stocks_wide.columns:
 
 summary_df = pd.DataFrame(summary_rows).set_index("Label").sort_index()
 
-# Build display version (string-formatted to significant figures)
 summary_df_display = summary_df.copy()
 
-# Columns that are rates we may want to show as percent
 rate_cols = {
     "Discount_Rate_Annual_(log)",
     "Ann_Return_(log)",
@@ -1039,7 +942,6 @@ for col in summary_df_display.columns:
 
 st.dataframe(summary_df_display, use_container_width=True)
 
-# Display MRP note (formatted)
 mrp_note = sig_pct_str(mrp_annual_log, DISPLAY_SIG_FIGS) if DISPLAY_PCT else sig_str(mrp_annual_log, DISPLAY_SIG_FIGS)
 st.caption(
     f"Market Risk Premium used (annual, log approx): {mrp_note} "
@@ -1051,17 +953,12 @@ if exports_enabled:
     export_aligned = aligned_panel.copy()
 
     if FORMAT_EXPORTS:
-        # Round numeric columns to sig figs for export (optional)
         for c in export_summary.columns:
             if pd.api.types.is_numeric_dtype(export_summary[c]):
-                export_summary[c] = export_summary[c].map(
-                    lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                )
+                export_summary[c] = export_summary[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
         for c in export_aligned.columns:
             if pd.api.types.is_numeric_dtype(export_aligned[c]):
-                export_aligned[c] = export_aligned[c].map(
-                    lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                )
+                export_aligned[c] = export_aligned[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
 
     st.download_button(
         "Download summary metrics (CSV)",
