@@ -80,9 +80,6 @@ DATA_DIR = BASE_DIR / "data"
 
 SECTOR_RETURNS_PATH = DATA_DIR / "sector_returns.csv"
 
-st.caption(f"Repo root: {BASE_DIR}")
-st.caption(f"Data directory: {DATA_DIR}")
-
 if not SECTOR_RETURNS_PATH.exists():
     st.error(f"Missing file: {SECTOR_RETURNS_PATH}")
     st.stop()
@@ -109,9 +106,6 @@ except Exception as e:
     st.error("Failed to load data.")
     st.exception(e)
     st.stop()
-
-st.caption(f"Loaded panel rows: {len(panel):,} | sector rows: {len(sector_returns):,}")
-st.caption(f"Sector file path resolved to: {SECTOR_RETURNS_PATH}")
 
 panel = panel.sort_values(["Date", "Ticker"]).reset_index(drop=True)
 sector_returns = sector_returns.sort_values(["Date", "Sector"]).reset_index(drop=True)
@@ -985,5 +979,6 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
