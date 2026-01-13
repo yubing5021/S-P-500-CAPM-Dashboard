@@ -1,9 +1,22 @@
 """
 CAPM Dashboard.py
 
+## Live App
+
+The dashboard is deployed on Streamlit Cloud:
+
+👉 https://sp500-capm-dashboard.streamlit.app
+
+## Architecture
+
+- `app/` – Streamlit dashboard application
+- `pipeline/` – Data ingestion & preprocessing scripts
+- `data/` – Lightweight CSV inputs
+- Large datasets are hosted externally (Dropbox) and loaded securely via Streamlit secrets
+
 Streamlit dashboard for S&P 500 analysis using weekly log returns.
 
-Key features
+# Key features
 - Sector multi-select
 - Ticker multi-select labeled as: TICKER (Company Name)
 - Cumulative $1 growth chart (Market + selected sectors + selected tickers)
@@ -983,3 +996,4 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
