@@ -420,8 +420,9 @@ selected_sectors = st.sidebar.multiselect(
 )
 
 if not selected_sectors:
-    st.info("Select at least one sector.")
-    st.stop()
+    # Auto-repair: reset to a valid default and rerun (prevents chart flashing/disappearing)
+    st.session_state.selected_sectors = all_sectors[:1] if all_sectors else []
+    st.rerun()
 
 # ----------------------------
 # 6C) Build ticker name map (needed for labels)
@@ -472,8 +473,9 @@ selected_labels = st.sidebar.multiselect(
 selected_tickers = [label_to_ticker[lbl] for lbl in selected_labels if lbl in label_to_ticker]
 
 if not selected_tickers:
-    st.info("Select at least one ticker.")
-    st.stop()
+    # Auto-repair: reset to valid default tickers for the selected sector(s) and rerun
+    st.session_state.selected_labels = labels_pool[:5] if labels_pool else []
+    st.rerun()
 
 # ----------------------------
 # 6E) Estimation horizon + winsorization
@@ -1057,6 +1059,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
