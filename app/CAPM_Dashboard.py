@@ -974,13 +974,14 @@ if exports_enabled:
 # 12) FOOTNOTE
 # ============================================================
 st.caption(
+    "Equity prices, tickers, and sector classifications are sourced from Yahoo Finance. "
+    "The risk-free rate is proxied using the 3-month U.S. Treasury bill sourced from the Federal Reserve Economic Data (FRED). "
     "Returns are weekly log returns. CAPM beta/alpha are estimated on excess returns (return minus RF). "
     "Discount rate is computed via CAPM: RF + beta * MRP (annualized log approx). "
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
-    "Equity prices, tickers, and sector classifications are sourced from Yahoo Finance."
-    "The risk-free rate is proxied using the 3-month U.S. Treasury bill sourced from the Federal Reserve Economic Data (FRED)."
 )
+
 
 
 
