@@ -72,19 +72,15 @@ st.markdown(
     """
 )
 
-
 # ============================================================
-# 2) PATHS (REPO-FIRST, WITH LOCAL DEV FALLBACK)
+# 2) PATHS (repo-friendly)
 # ============================================================
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parents[1]   # repo root (since file is in /app)
 DATA_DIR = BASE_DIR / "data"
-
-if not DATA_DIR.exists():
-    # fallback to local OneDrive dev path
-    DATA_DIR = Path.home() / "OneDrive" / "Desktop" / "S&P 500 Scrapper" / "sp500_outputs"
 
 SECTOR_RETURNS_PATH = DATA_DIR / "sector_returns.csv"
 
+st.caption(f"Repo root: {BASE_DIR}")
 st.caption(f"Data directory: {DATA_DIR}")
 
 if not SECTOR_RETURNS_PATH.exists():
@@ -93,36 +89,29 @@ if not SECTOR_RETURNS_PATH.exists():
 
 
 # ============================================================
-# 3) LOAD DATA (REMOTE PANEL + LOCAL SECTOR FILE)
+# 3) LOAD DATA
 # ============================================================
 @st.cache_data(show_spinner=False)
 def load_panel_from_url(url: str) -> pd.DataFrame:
-    # Note: for Dropbox links, you typically want dl=1 (direct download).
     return pd.read_csv(url, parse_dates=["Date"])
-
 
 @st.cache_data(show_spinner=False)
 def load_data(sector_returns_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    if "PANEL_URL" not in st.secrets:
-        raise KeyError(
-            "Missing PANEL_URL in Streamlit secrets. Add it in .streamlit/secrets.toml (local) "
-            "or in Streamlit Community Cloud app settings."
-        )
-
     panel_url = st.secrets["PANEL_URL"]
     panel_df = load_panel_from_url(panel_url)
 
     sector_df = pd.read_csv(sector_returns_path, parse_dates=["Date"])
     return panel_df, sector_df
 
-
-# ---- Safe wrapper: load ONCE, stop cleanly on failure ----
 try:
     panel, sector_returns = load_data(SECTOR_RETURNS_PATH)
 except Exception as e:
-    st.error("Failed to load required data (panel from PANEL_URL and/or local sector_returns.csv).")
+    st.error("Failed to load data.")
     st.exception(e)
     st.stop()
+
+st.caption(f"Loaded panel rows: {len(panel):,} | sector rows: {len(sector_returns):,}")
+st.caption(f"Sector file path resolved to: {SECTOR_RETURNS_PATH}")
 
 panel = panel.sort_values(["Date", "Ticker"]).reset_index(drop=True)
 sector_returns = sector_returns.sort_values(["Date", "Sector"]).reset_index(drop=True)
@@ -996,4 +985,5 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
