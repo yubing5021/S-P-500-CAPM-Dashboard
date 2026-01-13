@@ -384,17 +384,31 @@ def apply_axis_and_hover_format(fig, sig: int, y_is_percent: bool, y_label: str)
     else:
         fig.update_traces(hovertemplate=f"Date=%{{x}}<br>{y_label}=%{{y:.{sig}g}}<extra></extra>")
 # ============================================================
-# 6) SIDEBAR CONTROLS
+# 6A) SIDEBAR CONTROLS
 # ============================================================
 st.sidebar.header("Controls")
 
-# --- sectors
+# Precision + percent toggles (new)
+st.sidebar.subheader("Display Formatting")
+DISPLAY_SIG_FIGS = st.sidebar.slider(
+    "Significant figures (display)", min_value=2, max_value=6, value=3, step=1
+)
+DISPLAY_PCT = st.sidebar.checkbox("Display rates as percent (%)", value=True)
+FORMAT_EXPORTS = st.sidebar.checkbox(
+    "Format CSV exports (rounding) — not recommended", value=False
+)
+
+st.sidebar.divider()
+
+# ----------------------------
+# 6B) Sectors (default to 1 sector, state-safe)
+# ----------------------------
 all_sectors = sorted(panel["Sector"].dropna().unique().tolist())
 
 if "selected_sectors" not in st.session_state:
-    st.session_state.selected_sectors = all_sectors[:1]  # default 1 sector
+    st.session_state.selected_sectors = all_sectors[:1]  # default: 1 sector
 else:
-    # keep only valid sectors
+    # keep only sectors that still exist in the options
     st.session_state.selected_sectors = [s for s in st.session_state.selected_sectors if s in all_sectors]
     if not st.session_state.selected_sectors:
         st.session_state.selected_sectors = all_sectors[:1]
@@ -409,15 +423,42 @@ if not selected_sectors:
     st.info("Select at least one sector.")
     st.stop()
 
-# --- tickers (depends on selected sectors)
-tickers_pool = sorted(panel.loc[panel["Sector"].isin(selected_sectors), "Ticker"].dropna().unique().tolist())
-labels_pool = [ticker_label(t) for t in tickers_pool]
+# ----------------------------
+# 6C) Build ticker name map (needed for labels)
+# ----------------------------
+ticker_sector_map: Dict[str, str] = (
+    panel.groupby("Ticker")["Sector"]
+    .agg(lambda s: s.value_counts().index[0] if not s.empty else "Unknown")
+    .to_dict()
+)
+
+ticker_name_map: Dict[str, Optional[str]] = {}
+if has_company_name:
+    ticker_name_map = (
+        panel.groupby("Ticker")["Company_Name"]
+        .agg(safe_first_nonnull)
+        .to_dict()
+    )
+
+def _label_for_ticker(t: str) -> str:
+    """UI label: TICKER (Company Name) if available."""
+    nm = ticker_name_map.get(t)
+    return f"{t} ({nm})" if nm else t
+
+# ----------------------------
+# 6D) Tickers (depends on selected sectors, state-safe)
+# ----------------------------
+tickers_pool = sorted(
+    panel.loc[panel["Sector"].isin(selected_sectors), "Ticker"].dropna().unique().tolist()
+)
+
+labels_pool = [_label_for_ticker(t) for t in tickers_pool]
 label_to_ticker = dict(zip(labels_pool, tickers_pool))
 
+# Initialize / sanitize selected labels so they are always valid given current options
 if "selected_labels" not in st.session_state:
     st.session_state.selected_labels = labels_pool[:5]
 else:
-    # keep only valid labels for the current sector selection
     st.session_state.selected_labels = [l for l in st.session_state.selected_labels if l in labels_pool]
     if not st.session_state.selected_labels:
         st.session_state.selected_labels = labels_pool[:5]
@@ -433,6 +474,22 @@ selected_tickers = [label_to_ticker[lbl] for lbl in selected_labels if lbl in la
 if not selected_tickers:
     st.info("Select at least one ticker.")
     st.stop()
+
+# ----------------------------
+# 6E) Estimation horizon + winsorization
+# ----------------------------
+st.sidebar.subheader("Estimation Horizon")
+horizon_weeks = st.sidebar.radio(
+    "Select horizon (weeks)",
+    options=[52, 156],
+    index=1,
+    help="52w = more responsive but noisier; 156w (~3y) = more stable, cycle-aware estimates.",
+)
+
+apply_winsor = st.sidebar.checkbox("Winsorize weekly returns (1%)", value=False)
+
+st.sidebar.divider()
+exports_enabled = st.sidebar.checkbox("Enable downloads", value=True)
 
 # ============================================================
 # 7) BUILD ALIGNED SERIES (IMPORTANT FIX: groupby mean)
@@ -1000,6 +1057,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
