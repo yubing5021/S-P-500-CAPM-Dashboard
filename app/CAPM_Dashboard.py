@@ -425,7 +425,7 @@ if not selected_sectors:
     st.rerun()
 
 # ----------------------------
-# 6C) Build ticker name map (needed for labels)
+# 6C) Ticker sector + name maps (for labeling and sector benchmark logic)
 # ----------------------------
 ticker_sector_map: Dict[str, str] = (
     panel.groupby("Ticker")["Sector"]
@@ -442,40 +442,39 @@ if has_company_name:
     )
 
 def ticker_label(t: str) -> str:
-    """UI label used across the app: TICKER (Company Name) if available."""
+    """UI label: TICKER (Company Name) if available."""
     nm = ticker_name_map.get(t)
     return f"{t} ({nm})" if nm else t
 
 # ----------------------------
-# 6D) Tickers (depends on selected sectors, state-safe)
+# 6D) Tickers (state-safe: store tickers, not labels)
 # ----------------------------
 tickers_pool = sorted(
     panel.loc[panel["Sector"].isin(selected_sectors), "Ticker"].dropna().unique().tolist()
 )
 
-labels_pool = [ticker_label(t) for t in tickers_pool]
-label_to_ticker = dict(zip(labels_pool, tickers_pool))
+if not tickers_pool:
+    st.error("No tickers available for the selected sector(s). Check your data filters.")
+    st.stop()
 
-# Initialize / sanitize selected labels so they are always valid given current options
-if "selected_labels" not in st.session_state:
-    st.session_state.selected_labels = labels_pool[:5]
+# Initialize / sanitize selected tickers (stable, because values are tickers)
+if "selected_tickers" not in st.session_state:
+    st.session_state.selected_tickers = tickers_pool[:5]
 else:
-    st.session_state.selected_labels = [l for l in st.session_state.selected_labels if l in labels_pool]
-    if not st.session_state.selected_labels:
-        st.session_state.selected_labels = labels_pool[:5]
+    st.session_state.selected_tickers = [t for t in st.session_state.selected_tickers if t in tickers_pool]
+    if not st.session_state.selected_tickers:
+        st.session_state.selected_tickers = tickers_pool[:5]
 
-selected_labels = st.sidebar.multiselect(
+selected_tickers = st.sidebar.multiselect(
     "Tickers (TICKER (Company Name))",
-    options=labels_pool,
-    key="selected_labels",
+    options=tickers_pool,                 # underlying values are tickers
+    format_func=ticker_label,             # displayed labels
+    key="selected_tickers",
 )
 
-selected_tickers = [label_to_ticker[lbl] for lbl in selected_labels if lbl in label_to_ticker]
-
 if not selected_tickers:
-    # Auto-repair: reset to valid default tickers for the selected sector(s) and rerun
-    st.session_state.selected_labels = labels_pool[:5] if labels_pool else []
-    st.rerun()
+    st.info("Select at least one ticker.")
+    st.stop()
 
 # ----------------------------
 # 6E) Estimation horizon + winsorization
@@ -549,7 +548,6 @@ aligned_panel = pd.concat(
     ],
     axis=1,
 )
-
 
 # ============================================================
 # 8) DISCOUNT RATE SETTINGS
@@ -1059,6 +1057,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
