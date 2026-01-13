@@ -440,8 +440,8 @@ if has_company_name:
         .to_dict()
     )
 
-def _label_for_ticker(t: str) -> str:
-    """UI label: TICKER (Company Name) if available."""
+def ticker_label(t: str) -> str:
+    """UI label used across the app: TICKER (Company Name) if available."""
     nm = ticker_name_map.get(t)
     return f"{t} ({nm})" if nm else t
 
@@ -452,7 +452,7 @@ tickers_pool = sorted(
     panel.loc[panel["Sector"].isin(selected_sectors), "Ticker"].dropna().unique().tolist()
 )
 
-labels_pool = [_label_for_ticker(t) for t in tickers_pool]
+labels_pool = [ticker_label(t) for t in tickers_pool]
 label_to_ticker = dict(zip(labels_pool, tickers_pool))
 
 # Initialize / sanitize selected labels so they are always valid given current options
@@ -1057,6 +1057,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
