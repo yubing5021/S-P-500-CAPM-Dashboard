@@ -406,12 +406,7 @@ st.sidebar.divider()
 all_sectors = sorted(panel["Sector"].dropna().unique().tolist())
 
 if "selected_sectors" not in st.session_state:
-    st.session_state.selected_sectors = all_sectors[:1]  # default: 1 sector
-else:
-    # keep only sectors that still exist in the options
-    st.session_state.selected_sectors = [s for s in st.session_state.selected_sectors if s in all_sectors]
-    if not st.session_state.selected_sectors:
-        st.session_state.selected_sectors = all_sectors[:1]
+    st.session_state.selected_sectors = all_sectors[:1]  # initial default only
 
 selected_sectors = st.sidebar.multiselect(
     "Sectors (multi-select)",
@@ -419,10 +414,10 @@ selected_sectors = st.sidebar.multiselect(
     key="selected_sectors",
 )
 
+# Do NOT auto-add a sector after the user clears the selection
 if not selected_sectors:
-    # Auto-repair: reset to a valid default and rerun (prevents chart flashing/disappearing)
-    st.session_state.selected_sectors = all_sectors[:1] if all_sectors else []
-    st.rerun()
+    st.info("Select at least one sector.")
+    st.stop()
 
 # ----------------------------
 # 6C) Ticker sector + name maps (for labeling and sector benchmark logic)
@@ -1057,6 +1052,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
