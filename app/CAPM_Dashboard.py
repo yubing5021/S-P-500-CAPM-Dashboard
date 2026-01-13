@@ -569,7 +569,7 @@ st.subheader("Cumulative Performance ($1 growth)")
 # --- Build cumulative $1 growth series from weekly log returns
 cum = pd.DataFrame(index=common_dates)
 
-cum["Market"] = cumulative_from_log_returns(mkt_rf["Market_Log_Return"])
+cum["Market (S&P 500)"] = cumulative_from_log_returns(mkt_rf["Market_Log_Return"])
 
 for sec in sectors_wide.columns:
     cum[f"Sector: {sec}"] = cumulative_from_log_returns(sectors_wide[sec])
@@ -1052,6 +1052,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
