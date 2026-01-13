@@ -55,7 +55,11 @@ import streamlit as st
 # ============================================================
 # 1) PAGE CONFIG
 # ============================================================
-st.set_page_config(page_title="CAPM Dashboard", layout="wide")
+st.set_page_config(
+    page_title="CAPM Dashboard",
+    layout="wide",
+    initial_sidebar_state="expanded",  # prevents first-load reflow
+)
 st.title("S&P 500 CAPM Dashboard")
 
 st.markdown(
@@ -526,36 +530,71 @@ custom_mrp = st.sidebar.slider(
 )
 mrp_annual_log = float(custom_mrp) if use_custom_mrp else float(mrp_hist_annual_log)
 
-
 # ============================================================
 # 9) CUMULATIVE PERFORMANCE ($1 growth)
 # ============================================================
 st.subheader("Cumulative Performance ($1 growth)")
 
+# --- Build cumulative $1 growth series from weekly log returns
 cum = pd.DataFrame(index=common_dates)
+
 cum["Market"] = cumulative_from_log_returns(mkt_rf["Market_Log_Return"])
+
 for sec in sectors_wide.columns:
     cum[f"Sector: {sec}"] = cumulative_from_log_returns(sectors_wide[sec])
+
 for t in stocks_wide.columns:
     cum[ticker_label(t)] = cumulative_from_log_returns(stocks_wide[t])
 
-cum_long = cum.reset_index().melt(id_vars="Date", var_name="Series", value_name="Growth")
-fig_cum = px.line(cum_long, x="Date", y="Growth", color="Series")
-fig_cum.update_yaxes(tickformat=f".{DISPLAY_SIG_FIGS}g")
-fig_cum.update_traces(hovertemplate=f"Date=%{{x}}<br>Growth=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>")
-st.plotly_chart(fig_cum, use_container_width=True)
+# --- Long format for Plotly
+cum_long = (
+    cum
+    .reset_index()
+    .melt(id_vars="Date", var_name="Series", value_name="Growth")
+)
 
+# --- Plot
+fig_cum = px.line(
+    cum_long,
+    x="Date",
+    y="Growth",
+    color="Series",
+    title=None,
+)
+
+# --- Enforce stable initial render (prevents blank chart on load)
+fig_cum.update_layout(
+    autosize=True,
+    height=600,
+    margin=dict(l=40, r=40, t=60, b=40),
+)
+
+fig_cum.update_yaxes(tickformat=f".{DISPLAY_SIG_FIGS}g")
+fig_cum.update_traces(
+    hovertemplate=f"Date=%{{x}}<br>Growth=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>"
+)
+
+st.plotly_chart(
+    fig_cum,
+    use_container_width=True,
+    config={"responsive": True},
+)
+
+# --- Export
 if exports_enabled:
     export_cum = cum.copy()
+
     if FORMAT_EXPORTS:
-        export_cum = export_cum.applymap(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
+        export_cum = export_cum.applymap(
+            lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
+        )
+
     st.download_button(
         "Download cumulative growth (CSV)",
         df_to_csv_bytes(export_cum, True),
         "cumulative_growth.csv",
         "text/csv",
     )
-
 
 # ============================================================
 # 9A) MACRO INPUTS: RISK-FREE RATE & MARKET RISK PREMIUM
@@ -982,6 +1021,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
