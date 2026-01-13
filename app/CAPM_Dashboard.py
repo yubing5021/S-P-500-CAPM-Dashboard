@@ -341,7 +341,7 @@ def rolling_capm_tstats(excess_y: pd.Series, excess_x: pd.Series, window: int) -
 
 
 # ----------------------------
-# Presentation formatting
+#5B) Presentation formatting
 # ----------------------------
 def sig_str(x: object, sig: int) -> str:
     """N significant figures as a string; blank for NaN/None."""
@@ -394,14 +394,15 @@ FORMAT_EXPORTS = st.sidebar.checkbox("Format CSV exports (rounding) — not reco
 st.sidebar.divider()
 
 all_sectors = sorted(panel["Sector"].dropna().unique().tolist())
+# --- initialize default ONCE (prevents Streamlit sticky state)
+if "selected_sectors" not in st.session_state:
+    st.session_state.selected_sectors = all_sectors[:1]
+
 selected_sectors = st.sidebar.multiselect(
     "Sectors (multi-select)",
     options=all_sectors,
-    default=all_sectors[:2] if len(all_sectors) >= 2 else all_sectors,
+    key="selected_sectors",
 )
-if not selected_sectors:
-    st.info("Select at least one sector.")
-    st.stop()
 
 ticker_sector_map: Dict[str, str] = (
     panel.groupby("Ticker")["Sector"]
@@ -981,6 +982,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
