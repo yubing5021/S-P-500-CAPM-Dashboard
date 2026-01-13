@@ -454,11 +454,11 @@ if not tickers_pool:
 
 # Initialize / sanitize selected tickers (stable, because values are tickers)
 if "selected_tickers" not in st.session_state:
-    st.session_state.selected_tickers = tickers_pool[:5]
+    st.session_state.selected_tickers = tickers_pool[:1]
 else:
     st.session_state.selected_tickers = [t for t in st.session_state.selected_tickers if t in tickers_pool]
     if not st.session_state.selected_tickers:
-        st.session_state.selected_tickers = tickers_pool[:5]
+        st.session_state.selected_tickers = tickers_pool[:1]
 
 selected_tickers = st.sidebar.multiselect(
     "Tickers (TICKER (Company Name))",
@@ -1052,6 +1052,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
