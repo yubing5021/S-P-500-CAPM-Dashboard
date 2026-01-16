@@ -939,7 +939,7 @@ with tab_disc:
             ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
 
         # Subtitle + caption placed in Streamlit so caption sits directly under it
-        st.subheader("Rolling Discount Rate (Annualized, log approx)")
+        st.markdown("Rolling Discount Rate (Annualized, log approx)")
         st.caption(
             "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
             "Rolling RF and rolling MRP are computed over the same rolling window."
@@ -1224,6 +1224,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
