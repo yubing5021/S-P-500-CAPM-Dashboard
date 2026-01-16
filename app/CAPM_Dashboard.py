@@ -905,8 +905,6 @@ with tab_sec:
 with tab_disc:
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
-
-    # If custom MRP is enabled, use a constant annual MRP; otherwise use rolling MRP.
     mrp_used_ann = pd.Series(mrp_annual_log, index=common_dates) if use_custom_mrp else mrp_roll_ann
 
     disc_rows = []
@@ -920,14 +918,35 @@ with tab_disc:
         mrp_part = mrp_used_ann.loc[beta_roll.index]
         disc = rf_part + beta_roll * mrp_part
 
-        disc_rows.append(
-            pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values})
-        )
+        disc_rows.append(pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values}))
 
     if not disc_rows:
-        st.warning(
-            "No rolling discount rate available. Try a smaller window (e.g., 52) or choose tickers with longer history."
+        st.warning("No rolling discount rate available. Try a smaller window (e.g., 52) or choose tickers with longer history.")
+    else:
+        df_disc = pd.concat(disc_rows, ignore_index=True)
+
+        df_disc_plot = df_disc.copy()
+        if DISPLAY_PCT:
+            df_disc_plot["DiscountRate_disp"] = df_disc_plot["DiscountRate"] * 100.0
+            ycol, ylab, is_pct = "DiscountRate_disp", "Discount Rate (annual, log)", True
+        else:
+            ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
+
+        st.caption(
+            "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
+            "Rolling RF and rolling MRP are computed over the same rolling window."
         )
+
+        fig_disc = px.line(
+            df_disc_plot,
+            x="Date",
+            y=ycol,
+            color="Label",
+            title="Rolling Discount Rate (Annualized, log approx)",  # <-- Plotly title (matches other tabs)
+        )
+        apply_axis_and_hover_format(fig_disc, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
+        st.plotly_chart(fig_disc, use_container_width=True)
+
     else:
         df_disc = pd.concat(disc_rows, ignore_index=True)
 
@@ -1224,6 +1243,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
