@@ -1097,7 +1097,7 @@ st.dataframe(
         ),
         "Discount_Rate_Annual_(log)": st.column_config.NumberColumn(
             "Discount Rate (Annual, log)",
-            help="CAPM-implied cost of equity: risk-free rate plus beta times the market risk premium, annualized from weekly log returns."
+            help="The required return on equity implied by the stock’s exposure to systematic market risk."
         ),
         "Ann_Return_(log)": st.column_config.NumberColumn(
             "Annual Return (log)",
@@ -1105,7 +1105,7 @@ st.dataframe(
         ),
         "Ann_Vol": st.column_config.NumberColumn(
             "Annualized Volatility",
-            help="Total return volatility, annualized from weekly log returns."
+            help="The standard deviation of a ticker’s annualized returns i.e., how much returns typically fluctuate around the mean."
         ),
         "Ann_Excess_Return_(log)": st.column_config.NumberColumn(
             "Annual Excess Return (log)",
@@ -1113,7 +1113,7 @@ st.dataframe(
         ),
         "Sharpe": st.column_config.NumberColumn(
             "Sharpe Ratio",
-            help="Risk-adjusted return defined as annual excess return divided by annualized volatility."
+            help="Excess return per unit of total risk (volatility). Higher = Better"
         ),
         "Beta_vs_Market": st.column_config.NumberColumn(
             "Beta vs Market",
@@ -1125,11 +1125,11 @@ st.dataframe(
         ),
         "Beta_tstat_vs_Market": st.column_config.NumberColumn(
             "Beta t-stat",
-            help="t-statistic testing whether beta is statistically different from zero."
+            help="  ∣t∣≥1.96→ indicates beta is statistically different from zero at ~5%, implying reliable exposure to market risk."
         ),
         "Alpha_tstat_vs_Market": st.column_config.NumberColumn(
             "Alpha t-stat",
-            help="t-statistic testing whether alpha is statistically different from zero."
+            help="  ∣t∣≥1.96→ indicates alpha is statistically different from zero at ~5%, implying statistically significant abnormal returns."
         ),
         "R2_vs_Market": st.column_config.NumberColumn(
             "R² vs Market",
@@ -1180,6 +1180,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
