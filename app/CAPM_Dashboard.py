@@ -924,7 +924,6 @@ with tab_disc:
         beta_roll = r["beta"]
         rf_part = rf_roll_ann.loc[beta_roll.index]
         mrp_part = mrp_used_ann.loc[beta_roll.index]
-
         disc = rf_part + beta_roll * mrp_part
 
         disc_rows.append(
@@ -953,40 +952,33 @@ with tab_disc:
         else:
             ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
 
-        # Caption ABOVE chart; title handled by Plotly for font consistency
-        st.caption(
-            "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
-            "Rolling RF and rolling MRP are computed over the same rolling window."
-        )
-        # Plot (title matches other tabs stylistically)
+        # Plot with subtitle embedded in Plotly title (so it sits directly under the header)
         fig_disc = px.line(
-    df_disc_plot,
-    x="Date",
-    y=ycol,
-    color="Label",
-    title=(
-        "Rolling Discount Rate (Annualized, log approx)<br>"
-        "<sup>Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
-        "Rolling RF and rolling MRP are computed over the same rolling window.</sup>"
-    ),
-)
+            df_disc_plot,
+            x="Date",
+            y=ycol,
+            color="Label",
+            title=(
+                "Rolling Discount Rate (Annualized, log approx)<br>"
+                "<sup>Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
+                "Rolling RF and rolling MRP are computed over the same rolling window.</sup>"
+            ),
+        )
 
-fig_disc.update_layout(
-    title=dict(
-        y=0.97,
-        yanchor="top"
-    ),
-    margin=dict(t=60)
-)
+        # Tighten title-to-plot spacing
+        fig_disc.update_layout(
+            title=dict(y=0.97, yanchor="top"),
+            margin=dict(t=60),
+        )
 
-apply_axis_and_hover_format(
-    fig_disc,
-    DISPLAY_SIG_FIGS,
-    y_is_percent=is_pct,
-    y_label=ylab
-)
+        apply_axis_and_hover_format(
+            fig_disc,
+            DISPLAY_SIG_FIGS,
+            y_is_percent=is_pct,
+            y_label=ylab,
+        )
 
-st.plotly_chart(fig_disc, use_container_width=True)
+        st.plotly_chart(fig_disc, use_container_width=True)
 
         # Export
         if exports_enabled:
@@ -1264,6 +1256,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
