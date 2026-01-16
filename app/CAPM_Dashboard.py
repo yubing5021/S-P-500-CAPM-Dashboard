@@ -1042,7 +1042,7 @@ for t in stocks_wide.columns:
 
     summary_rows.append(
         {
-            "Ticker": ticker_label(t),
+            "Label": ticker_label(t),
             "Obs": reg.get("n", len(ex)),
             "Discount_Rate_Annual_(log)": disc_rate_annual_log,
             "Ann_Return_(log)": float(ann_ret),
@@ -1180,6 +1180,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
