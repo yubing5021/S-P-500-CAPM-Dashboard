@@ -68,7 +68,7 @@ st.markdown(
 
     **Interpretation order (recommended):**
     1. **Macro Inputs** — the Risk-Free Rate (RF) and Market Risk Premium (MRP = Market − RF)
-    2. **Cumulative Performance** — growth of $1 for the market, sectors, and selected tickers from 2014 to 2016
+    2. **Cumulative Performance** — growth of $1 for the market, sectors, and selected tickers from 2014 to current
     3. **Rolling CAPM** — beta and alpha estimated on a trailing window (selected in the sidebar)
     4. **Discount Rate** — implied annualized discount rate = RF + β × MRP
 
@@ -561,6 +561,10 @@ custom_mrp = st.sidebar.slider(
 )
 mrp_annual_log = float(custom_mrp) if use_custom_mrp else float(mrp_hist_annual_log)
 
+st.sidebar.caption(
+    "Note: Custom MRP impacts discount-rate calculations (pricing assumption). "
+    "It does not change realized returns, volatility, or realized Sharpe."
+)
 # ============================================================
 # 9) CUMULATIVE PERFORMANCE ($1 growth)
 # ============================================================
@@ -568,8 +572,8 @@ st.subheader("Cumulative Performance ($1 growth)")
 
 st.markdown(
     """ 
- How much is a $1 in the market, sectors, and selected tickers from 2014 worth in 2026?
-    
+ How much is a $1 in the market, sectors, and selected tickers from 2014 worth currently?
+"""    
 )
 
 # --- Build cumulative $1 growth series from weekly log returns
@@ -1058,6 +1062,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
