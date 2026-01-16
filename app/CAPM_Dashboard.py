@@ -958,24 +958,35 @@ with tab_disc:
             "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
             "Rolling RF and rolling MRP are computed over the same rolling window."
         )
-
         # Plot (title matches other tabs stylistically)
         fig_disc = px.line(
-            df_disc_plot,
-            x="Date",
-            y=ycol,
-            color="Label",
-            title="Rolling Discount Rate (Annualized, log approx)",
-        )
+    df_disc_plot,
+    x="Date",
+    y=ycol,
+    color="Label",
+    title=(
+        "Rolling Discount Rate (Annualized, log approx)<br>"
+        "<sup>Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
+        "Rolling RF and rolling MRP are computed over the same rolling window.</sup>"
+    ),
+)
 
-        apply_axis_and_hover_format(
-            fig_disc,
-            DISPLAY_SIG_FIGS,
-            y_is_percent=is_pct,
-            y_label=ylab,
-        )
+fig_disc.update_layout(
+    title=dict(
+        y=0.97,
+        yanchor="top"
+    ),
+    margin=dict(t=60)
+)
 
-        st.plotly_chart(fig_disc, use_container_width=True)
+apply_axis_and_hover_format(
+    fig_disc,
+    DISPLAY_SIG_FIGS,
+    y_is_percent=is_pct,
+    y_label=ylab
+)
+
+st.plotly_chart(fig_disc, use_container_width=True)
 
         # Export
         if exports_enabled:
@@ -1253,6 +1264,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
