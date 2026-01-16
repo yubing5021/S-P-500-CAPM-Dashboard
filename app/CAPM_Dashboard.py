@@ -883,7 +883,7 @@ with tab_sec:
 
 with tab_disc:
     st.caption(
-        "Discount rate (annualized, log approx): RF_annual + beta rolling * MRP annual. "
+        "Discount rate (annualized, log approx): RF annual + beta rolling * MRP annual. "
         "Rolling RF and rolling MRP are computed over the same rolling window."
     )
 
@@ -917,9 +917,29 @@ with tab_disc:
         else:
             ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
 
-        fig_disc = px.line(df_disc_plot, x="Date", y=ycol, color="Label", title="Rolling Discount Rate (Annualized, log approx)")
-        apply_axis_and_hover_format(fig_disc, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
-        st.plotly_chart(fig_disc, use_container_width=True)
+st.subheader("Rolling Discount Rate (Annualized, log approx)")
+
+st.caption(
+    "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
+    "Rolling RF and rolling MRP are computed over the same rolling window."
+)
+
+fig_disc = px.line(
+    df_disc_plot,
+    x="Date",
+    y=ycol,
+    color="Label",
+)
+
+apply_axis_and_hover_format(
+    fig_disc,
+    DISPLAY_SIG_FIGS,
+    y_is_percent=is_pct,
+    y_label=ylab
+)
+
+st.plotly_chart(fig_disc, use_container_width=True)
+
 
         if exports_enabled:
             export_disc = df_disc.copy()
@@ -935,7 +955,7 @@ with tab_disc:
 with tab_tstat:
     st.caption(
         "Rolling alpha t-statistics from a rolling CAPM regression. "
-        "Dashed lines at ±2 indicate a common ~5% significance heuristic."
+        "Dashed lines at ±2 indicate a common ~5% significance level."
     )
 
     model_choice = st.radio("Alpha t-stat model", ["Vs Market", "Vs Sector Benchmark"], horizontal=True)
@@ -1117,7 +1137,7 @@ st.dataframe(
         ),
         "Beta_vs_Market": st.column_config.NumberColumn(
             "Beta vs Market",
-            help="CAPM beta measuring sensitivity to market excess returns."
+            help="CAPM beta measuring sensitivity to market excess returns; a beta of 1 indicates market-level risk."
         ),
         "Alpha_vs_Market_(weekly)": st.column_config.NumberColumn(
             "Alpha (Weekly)",
@@ -1180,6 +1200,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
