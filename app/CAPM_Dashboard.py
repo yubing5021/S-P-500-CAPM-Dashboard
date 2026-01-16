@@ -646,9 +646,11 @@ tab_weekly, tab_roll, tab_cum_rf = st.tabs(
 )
 
 with tab_weekly:
+    st.subheader("Weekly Risk-Free Rate and Market Risk Premium")
     st.caption(
-    "The weekly excess return of the market (S&P 500) in relation to the risk-free rate (3m T-bill). ")
-        
+        "The weekly excess return of the market (S&P 500) relative to the risk-free rate (3M T-Bill)."
+    )
+
     df_weekly = pd.DataFrame(
         {
             "Date": mkt_rf.index,
@@ -666,15 +668,33 @@ with tab_weekly:
         y_label = "Weekly log return"
         y_is_pct = False
 
-    df_weekly_melt = df_weekly.melt(id_vars="Date", var_name="Series", value_name="Value")
-    fig_weekly = px.line(df_weekly_melt, x="Date", y="Value", color="Series", title="Weekly Risk-Free Rate and Market Risk Premium")
-    apply_axis_and_hover_format(fig_weekly, DISPLAY_SIG_FIGS, y_is_percent=y_is_pct, y_label=y_label)
+    df_weekly_melt = df_weekly.melt(
+        id_vars="Date", var_name="Series", value_name="Value"
+    )
+
+    fig_weekly = px.line(
+        df_weekly_melt,
+        x="Date",
+        y="Value",
+        color="Series"
+    )
+
+    apply_axis_and_hover_format(
+        fig_weekly,
+        DISPLAY_SIG_FIGS,
+        y_is_percent=y_is_pct,
+        y_label=y_label
+    )
+
     st.plotly_chart(fig_weekly, use_container_width=True)
 
+
 with tab_roll:
+    st.subheader(f"Rolling Annualized Risk-Free Rate and Market Risk Premium ({horizon_weeks}-week mean × 52)")
     st.caption(
-    "The rolling average of the risk-free rate and market risk premium. ")
-    
+        "Rolling annualized averages smooth short-term volatility to highlight changes in the market risk regime."
+    )
+
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * 52.0
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * 52.0
 
@@ -695,10 +715,26 @@ with tab_roll:
         y_label = "Annualized (log)"
         y_is_pct = False
 
-    df_roll_melt = df_roll.melt(id_vars="Date", var_name="Series", value_name="Value")
-    fig_roll = px.line(df_roll_melt, x="Date", y="Value", color="Series", title=f"Rolling Annualized RF and MRP ({horizon_weeks}-week mean × 52)")
-    apply_axis_and_hover_format(fig_roll, DISPLAY_SIG_FIGS, y_is_percent=y_is_pct, y_label=y_label)
+    df_roll_melt = df_roll.melt(
+        id_vars="Date", var_name="Series", value_name="Value"
+    )
+
+    fig_roll = px.line(
+        df_roll_melt,
+        x="Date",
+        y="Value",
+        color="Series"
+    )
+
+    apply_axis_and_hover_format(
+        fig_roll,
+        DISPLAY_SIG_FIGS,
+        y_is_percent=y_is_pct,
+        y_label=y_label
+    )
+
     st.plotly_chart(fig_roll, use_container_width=True)
+
 
 with tab_cum_rf:
     st.subheader("Cumulative Growth of $1: Market vs Risk-Free")
@@ -1094,6 +1130,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
