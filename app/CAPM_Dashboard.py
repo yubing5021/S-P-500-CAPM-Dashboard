@@ -903,18 +903,17 @@ with tab_sec:
 # Tab 3: Rolling Discount Rate
 # ----------------------------
 with tab_disc:
-    # Rolling RF and MRP (annualized, log approx)
+    st.caption(
+        "Discount rate (annualized, log approx): RF_annual + beta_rolling * MRP_annual. "
+        "Rolling RF and rolling MRP are computed over the same rolling window."
+    )
+
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
 
-    # Use custom MRP if enabled; otherwise use rolling historical MRP
-    mrp_used_ann = (
-        pd.Series(mrp_annual_log, index=common_dates)
-        if use_custom_mrp
-        else mrp_roll_ann
-    )
+    # If custom MRP is enabled, treat MRP as constant; otherwise use rolling MRP.
+    mrp_used_ann = pd.Series(mrp_annual_log, index=common_dates) if use_custom_mrp else mrp_roll_ann
 
-    # Build rolling discount rate per ticker
     disc_rows = []
     for t in excess_stocks.columns:
         r = rolling_alpha_beta(excess_stocks[t], excess_market, horizon_weeks)
@@ -927,74 +926,8 @@ with tab_disc:
         disc = rf_part + beta_roll * mrp_part
 
         disc_rows.append(
-            pd.DataFrame(
-                {
-                    "Date": disc.index,
-                    "Label": ticker_label(t),
-                    "DiscountRate": disc.values,
-                }
-            )
+            pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values})
         )
-
-    if not disc_rows:
-        st.warning(
-            "No rolling discount rate available. Try a smaller window (e.g., 52) "
-            "or choose tickers with longer history."
-        )
-    else:
-        df_disc = pd.concat(disc_rows, ignore_index=True)
-
-        # Display formatting
-        df_disc_plot = df_disc.copy()
-        if DISPLAY_PCT:
-            df_disc_plot["DiscountRate_disp"] = df_disc_plot["DiscountRate"] * 100.0
-            ycol, ylab, is_pct = "DiscountRate_disp", "Discount Rate (annual, log)", True
-        else:
-            ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
-
-        # Plot with subtitle embedded in Plotly title (so it sits directly under the header)
-        fig_disc = px.line(
-            df_disc_plot,
-            x="Date",
-            y=ycol,
-            color="Label",
-            title=(
-                "Rolling Discount Rate (Annualized, log approx)<br>"
-                "<sup>Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
-                "Rolling RF and rolling MRP are computed over the same rolling window.</sup>"
-            ),
-        )
-
-        # Tighten title-to-plot spacing
-        fig_disc.update_layout(
-            title=dict(y=0.97, yanchor="top"),
-            margin=dict(t=60),
-        )
-
-        apply_axis_and_hover_format(
-            fig_disc,
-            DISPLAY_SIG_FIGS,
-            y_is_percent=is_pct,
-            y_label=ylab,
-        )
-
-        st.plotly_chart(fig_disc, use_container_width=True)
-
-        # Export
-        if exports_enabled:
-            export_disc = df_disc.copy()
-            if FORMAT_EXPORTS:
-                export_disc["DiscountRate"] = export_disc["DiscountRate"].map(
-                    lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
-                )
-
-            st.download_button(
-                "Download rolling discount rate (CSV)",
-                export_disc.to_csv(index=False).encode("utf-8"),
-                "rolling_discount_rate.csv",
-                "text/csv",
-            )
-
 # ----------------------------
 # Tab 4: Rolling Alpha t-Stats
 # ----------------------------
@@ -1256,6 +1189,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
