@@ -67,13 +67,6 @@ st.markdown(
     This dashboard implements a weekly **log-return** CAPM workflow. It encompasses the market (S&P 500), a weighted-capped industry sector, and market constituent data from 2014 to current.
     Using excess returns, rolling betas, alpha t-statistics, and Sharpe ratios, it evaluates whether observed performance reflects consistent abnormal returns in correlation to the risk taken.
 
-    **Interpretation order (recommended):**
-    1. **Macro Inputs** — the Risk-Free Rate (RF) and Market Risk Premium (MRP = Market − RF)
-    2. **Cumulative Performance** — growth of $1 for the market, sectors, and selected tickers from 2014 to current
-    3. **Rolling CAPM** — beta and alpha estimated on a trailing window (selected in the sidebar)
-    4. **Discount Rate** — implied annualized discount rate = RF + β × MRP
-
-    Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
 
@@ -644,6 +637,10 @@ if exports_enabled:
 st.subheader("Macro Inputs: Risk-Free Rate & Market Risk Premium")
 
 st.caption(
+    "The weekly excess return of the market in relation to the risk-free rate (3m T-bill). "
+)
+
+st.caption(
     "These series provide macro context for CAPM outputs. "
     "Market Risk Premium (MRP) is computed as Market_Log_Return − RF_Log_Return using weekly log returns."
 )
@@ -721,6 +718,9 @@ with tab_cum_rf:
 # ============================================================
 st.subheader("Rolling Beta, Alpha, and Discount Rate (Excess Returns)")
 
+st.caption(
+    "The rolling average of the risk-free rate and market risk premium. "
+)
 tab_mkt, tab_sec, tab_disc, tab_tstat = st.tabs(
     [
         "Rolling vs Market",
@@ -1076,6 +1076,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
