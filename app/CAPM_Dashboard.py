@@ -669,6 +669,10 @@ with tab_weekly:
 
     df_weekly_melt = df_weekly.melt(id_vars="Date", var_name="Series", value_name="Value")
     fig_weekly = px.line(df_weekly_melt, x="Date", y="Value", color="Series", title="Weekly Risk-Free Rate and Market Risk Premium")
+
+    st.caption(
+    "The rolling average of the risk-free rate and market risk premium. "
+        
     apply_axis_and_hover_format(fig_weekly, DISPLAY_SIG_FIGS, y_is_percent=y_is_pct, y_label=y_label)
     st.plotly_chart(fig_weekly, use_container_width=True)
 
@@ -1076,6 +1080,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
