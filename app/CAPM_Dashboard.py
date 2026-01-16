@@ -903,7 +903,6 @@ with tab_sec:
 # Tab 3: Rolling Discount Rate
 # ----------------------------
 with tab_disc:
-
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
 
@@ -1233,6 +1232,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
