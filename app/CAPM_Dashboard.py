@@ -692,7 +692,7 @@ with tab_weekly:
 with tab_roll:
     st.subheader(f"Rolling Annualized Risk-Free Rate and Market Risk Premium ({horizon_weeks}-week mean × 52)")
     st.caption(
-        "Rolling annualized averages smooth short-term volatility to highlight changes in the market risk regime."
+        "Rolling annualized averages smooth short-term fluctuations to highlight changes in the market risk environment over time."
     )
 
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * 52.0
@@ -1130,6 +1130,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
