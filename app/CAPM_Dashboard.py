@@ -64,11 +64,11 @@ st.title("S&P 500 CAPM Dashboard")
 
 st.markdown(
     """
-    This dashboard implements a weekly **log-return** CAPM workflow.
+    This dashboard implements a weekly **log-return** CAPM workflow. 
 
     **Interpretation order (recommended):**
     1. **Macro Inputs** — the Risk-Free Rate (RF) and Market Risk Premium (MRP = Market − RF)
-    2. **Cumulative Performance** — growth of $1 for the market, sectors, and selected tickers
+    2. **Cumulative Performance** — growth of $1 for the market, sectors, and selected tickers from 2014 to 2016
     3. **Rolling CAPM** — beta and alpha estimated on a trailing window (selected in the sidebar)
     4. **Discount Rate** — implied annualized discount rate = RF + β × MRP
 
@@ -566,6 +566,12 @@ mrp_annual_log = float(custom_mrp) if use_custom_mrp else float(mrp_hist_annual_
 # ============================================================
 st.subheader("Cumulative Performance ($1 growth)")
 
+st.markdown(
+    """ 
+ How much is a $1 in the market, sectors, and selected tickers from 2014 worth in 2026?
+    
+)
+
 # --- Build cumulative $1 growth series from weekly log returns
 cum = pd.DataFrame(index=common_dates)
 
@@ -1052,6 +1058,7 @@ st.caption(
     "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
+
 
 
 
