@@ -64,7 +64,8 @@ st.title("S&P 500 CAPM Dashboard")
 
 st.markdown(
     """
-    This dashboard implements a weekly **log-return** CAPM workflow. 
+    This dashboard implements a weekly **log-return** CAPM workflow. It encompasses the market (S&P 500), a weighted-capped industry sector, and market constituent data from 2014 to current.
+    Using excess returns, rolling betas, alpha t-statistics, and Sharpe ratios, it evaluates whether observed performance reflects consistent abnormal returns in correlation to the risk taken.
 
     **Interpretation order (recommended):**
     1. **Macro Inputs** — the Risk-Free Rate (RF) and Market Risk Premium (MRP = Market − RF)
@@ -572,7 +573,7 @@ st.subheader("Cumulative Performance ($1 growth)")
 
 st.markdown(
     """ 
- How much is a $1 in the market, sectors, and selected tickers from 2014 worth currently?
+ How much is $1 invested in the market, sectors, and selected companies in 2014 worth now?
 """    
 )
 
@@ -1063,6 +1064,18 @@ st.caption(
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
 
+st.markdown(
+    """
+
+    **Interpretation order (recommended):**
+    1. **Macro Inputs** — the Risk-Free Rate (RF) and Market Risk Premium (MRP = Market − RF)
+    2. **Cumulative Performance** — growth of $1 for the market, sectors, and selected tickers from 2014 to current
+    3. **Rolling CAPM** — beta and alpha estimated on a trailing window (selected in the sidebar)
+    4. **Discount Rate** — implied annualized discount rate = RF + β × MRP
+
+    Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
+    """
+)
 
 
 
