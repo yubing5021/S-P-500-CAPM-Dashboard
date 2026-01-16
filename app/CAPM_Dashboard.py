@@ -882,11 +882,6 @@ with tab_sec:
             )
 
 with tab_disc:
-    st.caption(
-        "Discount rate (annualized, log approx): RF annual + beta rolling * MRP annual. "
-        "Rolling RF and rolling MRP are computed over the same rolling window."
-    )
-
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
 
@@ -903,10 +898,14 @@ with tab_disc:
         mrp_part = mrp_used_ann.loc[beta_roll.index]
         disc = rf_part + beta_roll * mrp_part
 
-        disc_rows.append(pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values}))
+        disc_rows.append(
+            pd.DataFrame({"Date": disc.index, "Label": ticker_label(t), "DiscountRate": disc.values})
+        )
 
     if not disc_rows:
-        st.warning("No rolling discount rate available. Try a smaller window (e.g., 52) or choose tickers with longer history.")
+        st.warning(
+            "No rolling discount rate available. Try a smaller window (e.g., 52) or choose tickers with longer history."
+        )
     else:
         df_disc = pd.concat(disc_rows, ignore_index=True)
 
@@ -916,6 +915,36 @@ with tab_disc:
             ycol, ylab, is_pct = "DiscountRate_disp", "Discount Rate (annual, log)", True
         else:
             ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
+
+        # Title + caption in Streamlit (so caption sits *under* the subtitle)
+        st.subheader("Rolling Discount Rate (Annualized, log approx)")
+        st.caption(
+            "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
+            "Rolling RF and rolling MRP are computed over the same rolling window."
+        )
+
+        # Plotly chart WITHOUT a title (title is handled by st.subheader above)
+        fig_disc = px.line(
+            df_disc_plot,
+            x="Date",
+            y=ycol,
+            color="Label",
+        )
+        apply_axis_and_hover_format(fig_disc, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
+        st.plotly_chart(fig_disc, use_container_width=True)
+
+        if exports_enabled:
+            export_disc = df_disc.copy()
+            if FORMAT_EXPORTS:
+                export_disc["DiscountRate"] = export_disc["DiscountRate"].map(
+                    lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
+                )
+            st.download_button(
+                "Download rolling discount rate (CSV)",
+                export_disc.to_csv(index=False).encode("utf-8"),
+                "rolling_discount_rate.csv",
+                "text/csv",
+            )
 
 st.subheader("Rolling Discount Rate (Annualized, log approx)")
 
@@ -1200,6 +1229,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
