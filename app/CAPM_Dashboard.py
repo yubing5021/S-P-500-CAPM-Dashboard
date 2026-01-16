@@ -883,7 +883,7 @@ with tab_sec:
 
 with tab_disc:
     st.caption(
-        "Discount rate (annualized, log approx): RF_annual + beta_rolling * MRP_annual. "
+        "Discount rate (annualized, log approx): RF_annual + beta rolling * MRP annual. "
         "Rolling RF and rolling MRP are computed over the same rolling window."
     )
 
@@ -1012,6 +1012,7 @@ with tab_tstat:
 # ============================================================
 # 11) SUMMARY METRICS (ANNUALIZED) + DISCOUNT RATE + R2 / ADJ R2
 # ============================================================
+
 st.subheader("Summary Metrics (Annualized)")
 
 rf_annual_log = annualize_log_mean(mkt_rf["RF_Log_Return"].mean())
@@ -1033,7 +1034,11 @@ for t in stocks_wide.columns:
     reg = capm_ols_metrics(ex, excess_market.loc[ex.index])
     beta = reg.get("beta", np.nan)
 
-    disc_rate_annual_log = float(rf_annual_log + beta * mrp_annual_log) if np.isfinite(beta) else np.nan
+    disc_rate_annual_log = (
+        float(rf_annual_log + beta * mrp_annual_log)
+        if np.isfinite(beta)
+        else np.nan
+    )
 
     summary_rows.append(
         {
@@ -1055,6 +1060,9 @@ for t in stocks_wide.columns:
 
 summary_df = pd.DataFrame(summary_rows).set_index("Label").sort_index()
 
+# ------------------------------------------------------------
+# Display formatting (percent vs numeric)
+# ------------------------------------------------------------
 summary_df_display = summary_df.copy()
 
 rate_cols = {
@@ -1068,43 +1076,85 @@ rate_cols = {
 for col in summary_df_display.columns:
     if pd.api.types.is_numeric_dtype(summary_df_display[col]):
         if DISPLAY_PCT and col in rate_cols:
-            summary_df_display[col] = summary_df_display[col].map(lambda v: sig_pct_str(v, DISPLAY_SIG_FIGS))
+            summary_df_display[col] = summary_df_display[col].map(
+                lambda v: sig_pct_str(v, DISPLAY_SIG_FIGS)
+            )
         else:
-            summary_df_display[col] = summary_df_display[col].map(lambda v: sig_str(v, DISPLAY_SIG_FIGS))
+            summary_df_display[col] = summary_df_display[col].map(
+                lambda v: sig_str(v, DISPLAY_SIG_FIGS)
+            )
 
-st.dataframe(summary_df_display, use_container_width=True)
+# ------------------------------------------------------------
+# Render table with column-level hover tooltips
+# ------------------------------------------------------------
+st.dataframe(
+    summary_df_display,
+    use_container_width=True,
+    column_config={
+        "Obs": st.column_config.NumberColumn(
+            "Obs",
+            help="Number of weekly observations used in the CAPM regression."
+        ),
+        "Discount_Rate_Annual_(log)": st.column_config.NumberColumn(
+            "Discount Rate (Annual, log)",
+            help="CAPM-implied cost of equity: risk-free rate plus beta times the market risk premium, annualized from weekly log returns."
+        ),
+        "Ann_Return_(log)": st.column_config.NumberColumn(
+            "Annual Return (log)",
+            help="Average realized annual return computed from weekly log returns."
+        ),
+        "Ann_Vol": st.column_config.NumberColumn(
+            "Annualized Volatility",
+            help="Total return volatility, annualized from weekly log returns."
+        ),
+        "Ann_Excess_Return_(log)": st.column_config.NumberColumn(
+            "Annual Excess Return (log)",
+            help="Average annual return in excess of the risk-free rate."
+        ),
+        "Sharpe": st.column_config.NumberColumn(
+            "Sharpe Ratio",
+            help="Risk-adjusted return defined as annual excess return divided by annualized volatility."
+        ),
+        "Beta_vs_Market": st.column_config.NumberColumn(
+            "Beta vs Market",
+            help="CAPM beta measuring sensitivity to market excess returns."
+        ),
+        "Alpha_vs_Market_(weekly)": st.column_config.NumberColumn(
+            "Alpha (Weekly)",
+            help="CAPM alpha representing the average weekly excess return unexplained by market risk."
+        ),
+        "Beta_tstat_vs_Market": st.column_config.NumberColumn(
+            "Beta t-stat",
+            help="t-statistic testing whether beta is statistically different from zero."
+        ),
+        "Alpha_tstat_vs_Market": st.column_config.NumberColumn(
+            "Alpha t-stat",
+            help="t-statistic testing whether alpha is statistically different from zero."
+        ),
+        "R2_vs_Market": st.column_config.NumberColumn(
+            "R² vs Market",
+            help="Fraction of return variance explained by market movements."
+        ),
+        "Adj_R2_vs_Market": st.column_config.NumberColumn(
+            "Adjusted R² vs Market",
+            help="R² adjusted for model complexity; nearly identical to R² in a single-factor CAPM."
+        ),
+    },
+)
 
-mrp_note = sig_pct_str(mrp_annual_log, DISPLAY_SIG_FIGS) if DISPLAY_PCT else sig_str(mrp_annual_log, DISPLAY_SIG_FIGS)
+# ------------------------------------------------------------
+# Footnote: Market Risk Premium used
+# ------------------------------------------------------------
+mrp_note = (
+    sig_pct_str(mrp_annual_log, DISPLAY_SIG_FIGS)
+    if DISPLAY_PCT
+    else sig_str(mrp_annual_log, DISPLAY_SIG_FIGS)
+)
+
 st.caption(
     f"Market Risk Premium used (annual, log approx): {mrp_note} "
     f"({'custom' if use_custom_mrp else 'historical from aligned data'})"
 )
-
-if exports_enabled:
-    export_summary = summary_df.copy()
-    export_aligned = aligned_panel.copy()
-
-    if FORMAT_EXPORTS:
-        for c in export_summary.columns:
-            if pd.api.types.is_numeric_dtype(export_summary[c]):
-                export_summary[c] = export_summary[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
-        for c in export_aligned.columns:
-            if pd.api.types.is_numeric_dtype(export_aligned[c]):
-                export_aligned[c] = export_aligned[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
-
-    st.download_button(
-        "Download summary metrics (CSV)",
-        export_summary.to_csv(index=True).encode("utf-8"),
-        "summary_metrics.csv",
-        "text/csv",
-    )
-    st.download_button(
-        "Download aligned returns panel (CSV)",
-        df_to_csv_bytes(export_aligned, True),
-        "aligned_returns_panel.csv",
-        "text/csv",
-    )
-
 
 # ============================================================
 # 12) FOOTNOTE
@@ -1114,7 +1164,7 @@ st.caption(
     "The risk-free rate is proxied using the 3-month U.S. Treasury bill sourced from the Federal Reserve Economic Data (FRED). "
     "Returns are weekly log returns. CAPM beta/alpha are estimated on excess returns (return minus RF). "
     "Discount rate is computed via CAPM: RF + beta * MRP (annualized log approx). "
-    "R² measures variance explained by the market; Adj R² penalizes overfitting (useful as you add factors). "
+    "R² measures variance explained by the market; Adj R² penalizes overfitting. "
     "Display formatting controls affect presentation only (exports keep full precision by default)."
 )
 
@@ -1130,6 +1180,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
