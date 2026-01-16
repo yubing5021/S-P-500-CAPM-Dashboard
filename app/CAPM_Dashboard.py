@@ -903,10 +903,6 @@ with tab_sec:
 # Tab 3: Rolling Discount Rate
 # ----------------------------
 with tab_disc:
-    st.caption(
-        "Discount rate (annualized, log approx): RF annual + beta rolling * MRP annual. "
-        "Rolling RF and rolling MRP are computed over the same rolling window."
-    )
 
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
@@ -984,10 +980,6 @@ with tab_disc:
 # Tab 4: Rolling Alpha t-Stats
 # ----------------------------
 with tab_tstat:
-    st.caption(
-        "Rolling alpha t-statistics from a rolling CAPM regression. "
-        "Dashed lines at ±2 indicate a common ~5% significance level."
-    )
 
     model_choice = st.radio("Alpha t-stat model", ["Vs Market", "Vs Sector Benchmark"], horizontal=True)
 
@@ -1241,6 +1233,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
