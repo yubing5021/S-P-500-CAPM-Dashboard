@@ -1010,7 +1010,7 @@ with tab_tstat:
 
 
 # ============================================================
-# 11) SUMMARY METRICS (ANNUALIZED) + DISCOUNT RATE + R2 / ADJ R2
+# 11A) SUMMARY METRICS (ANNUALIZED) + DISCOUNT RATE + R2 / ADJ R2
 # ============================================================
 
 st.subheader("Summary Metrics (Annualized)")
@@ -1042,7 +1042,7 @@ for t in stocks_wide.columns:
 
     summary_rows.append(
         {
-            "Label": ticker_label(t),
+            "Ticker": ticker_label(t),
             "Obs": reg.get("n", len(ex)),
             "Discount_Rate_Annual_(log)": disc_rate_annual_log,
             "Ann_Return_(log)": float(ann_ret),
@@ -1061,7 +1061,7 @@ for t in stocks_wide.columns:
 summary_df = pd.DataFrame(summary_rows).set_index("Label").sort_index()
 
 # ------------------------------------------------------------
-# Display formatting (percent vs numeric)
+# 11B) Display formatting (percent vs numeric)
 # ------------------------------------------------------------
 summary_df_display = summary_df.copy()
 
@@ -1085,7 +1085,7 @@ for col in summary_df_display.columns:
             )
 
 # ------------------------------------------------------------
-# Render table with column-level hover tooltips
+# 11C) Render table with column-level hover tooltips
 # ------------------------------------------------------------
 st.dataframe(
     summary_df_display,
@@ -1143,7 +1143,7 @@ st.dataframe(
 )
 
 # ------------------------------------------------------------
-# Footnote: Market Risk Premium used
+# 11D) Footnote: Market Risk Premium used
 # ------------------------------------------------------------
 mrp_note = (
     sig_pct_str(mrp_annual_log, DISPLAY_SIG_FIGS)
@@ -1180,6 +1180,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
