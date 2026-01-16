@@ -647,7 +647,7 @@ tab_weekly, tab_roll, tab_cum_rf = st.tabs(
 
 with tab_weekly:
     st.caption(
-    "The weekly excess return of the market (S&P 500) in relation to the risk-free rate (3m T-bill). "
+    "The weekly excess return of the market (S&P 500) in relation to the risk-free rate (3m T-bill). ")
         
     df_weekly = pd.DataFrame(
         {
@@ -673,7 +673,7 @@ with tab_weekly:
 
 with tab_roll:
     st.caption(
-    "The rolling average of the risk-free rate and market risk premium. "
+    "The rolling average of the risk-free rate and market risk premium. ")
     
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * 52.0
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * 52.0
@@ -702,7 +702,7 @@ with tab_roll:
 
 with tab_cum_rf:
     st.caption(
-    "The total growth of of $1 investment in the market (S&P 500) and the risk-free (3m T-bill) from 2014 to current. "
+    "The total growth of of $1 investment in the market (S&P 500) and the risk-free (3m T-bill) from 2014 to current. ")
     
     df_cum_rf = pd.DataFrame(
         {
@@ -1078,6 +1078,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
