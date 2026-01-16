@@ -638,7 +638,7 @@ st.subheader("Macro Inputs: Risk-Free Rate & Market Risk Premium")
 
 st.caption(
     "These series provide macro context for CAPM outputs. "
-    "Market Risk Premium (MRP) is computed as Market_Log_Return − RF_Log_Return using weekly log returns."
+    "Market Risk Premium (MRP) = Market Log Return − RF Log Return using weekly log returns."
 )
 
 tab_weekly, tab_roll, tab_cum_rf = st.tabs(
@@ -739,7 +739,7 @@ with tab_roll:
 with tab_cum_rf:
     st.subheader("Cumulative Growth of $1: Market vs Risk-Free")
     st.caption(
-        "The total growth of a $1 investment in the market (S&P 500) and the risk-free asset (3M T-bill) from 2014 to present."
+        "The total growth of a $1 investment in the market (S&P 500) against the risk-free asset (3M T-bill) from 2014 to present."
     )
 
     df_cum_rf = pd.DataFrame(
@@ -1130,6 +1130,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
