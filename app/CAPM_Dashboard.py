@@ -701,9 +701,11 @@ with tab_roll:
     st.plotly_chart(fig_roll, use_container_width=True)
 
 with tab_cum_rf:
+    st.subheader("Cumulative Growth of $1: Market vs Risk-Free")
     st.caption(
-    "The total growth of of $1 investment in the market (S&P 500) and the risk-free (3m T-bill) from 2014 to current. ")
-    
+        "The total growth of a $1 investment in the market (S&P 500) and the risk-free asset (3M T-bill) from 2014 to present."
+    )
+
     df_cum_rf = pd.DataFrame(
         {
             "Date": mkt_rf.index,
@@ -712,11 +714,25 @@ with tab_cum_rf:
         }
     ).dropna()
 
-    df_cum_rf_melt = df_cum_rf.melt(id_vars="Date", var_name="Series", value_name="Value")
-    fig_cum_rf = px.line(df_cum_rf_melt, x="Date", y="Value", color="Series", title="Cumulative Growth of $1: Market vs Risk-Free")
-    apply_axis_and_hover_format(fig_cum_rf, DISPLAY_SIG_FIGS, y_is_percent=False, y_label="$1 growth")
-    st.plotly_chart(fig_cum_rf, use_container_width=True)
+    df_cum_rf_melt = df_cum_rf.melt(
+        id_vars="Date", var_name="Series", value_name="Value"
+    )
 
+    fig_cum_rf = px.line(
+        df_cum_rf_melt,
+        x="Date",
+        y="Value",
+        color="Series"
+    )
+
+    apply_axis_and_hover_format(
+        fig_cum_rf,
+        DISPLAY_SIG_FIGS,
+        y_is_percent=False,
+        y_label="$1 growth"
+    )
+
+    st.plotly_chart(fig_cum_rf, use_container_width=True)
 
 # ============================================================
 # 10) ROLLING BETA/ALPHA + ROLLING DISCOUNT RATE
@@ -1078,6 +1094,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
