@@ -784,6 +784,9 @@ tab_mkt, tab_sec, tab_disc, tab_tstat = st.tabs(
     ]
 )
 
+# ----------------------------
+# Tab 1: Rolling vs Market
+# ----------------------------
 with tab_mkt:
     rows = []
     for t in excess_stocks.columns:
@@ -799,7 +802,8 @@ with tab_mkt:
     else:
         df_rm = pd.concat(rows, ignore_index=True)
 
-        fig_beta = px.line(df_rm, x="Date", y="beta", color="Label", title="Rolling Beta vs Market")
+        fig_beta = px.line(df_rm, x="Date", y="beta", color="Label")
+        fig_beta.update_layout(title="Rolling Beta vs Market")
         apply_axis_and_hover_format(fig_beta, DISPLAY_SIG_FIGS, y_is_percent=False, y_label="Beta")
         st.plotly_chart(fig_beta, use_container_width=True)
 
@@ -810,7 +814,8 @@ with tab_mkt:
         else:
             ycol, ylab, is_pct = "alpha", "Alpha (weekly)", False
 
-        fig_alpha = px.line(df_alpha, x="Date", y=ycol, color="Label", title="Rolling Alpha vs Market (weekly)")
+        fig_alpha = px.line(df_alpha, x="Date", y=ycol, color="Label")
+        fig_alpha.update_layout(title="Rolling Alpha vs Market (weekly)")
         apply_axis_and_hover_format(fig_alpha, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
         st.plotly_chart(fig_alpha, use_container_width=True)
 
@@ -818,7 +823,9 @@ with tab_mkt:
             export_rm = df_rm.copy()
             if FORMAT_EXPORTS:
                 for col in ["beta", "alpha"]:
-                    export_rm[col] = export_rm[col].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
+                    export_rm[col] = export_rm[col].map(
+                        lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
+                    )
             st.download_button(
                 "Download rolling vs market (CSV)",
                 export_rm.to_csv(index=False).encode("utf-8"),
@@ -826,6 +833,9 @@ with tab_mkt:
                 "text/csv",
             )
 
+# ----------------------------
+# Tab 2: Rolling vs Sector Benchmark
+# ----------------------------
 with tab_sec:
     rows = []
     for t in excess_stocks.columns:
@@ -847,10 +857,13 @@ with tab_sec:
         df_rs = pd.concat(rows, ignore_index=True)
 
         fig_beta_s = px.line(
-            df_rs, x="Date", y="beta", color="Label",
-            title="Rolling Beta vs Sector Benchmark",
+            df_rs,
+            x="Date",
+            y="beta",
+            color="Label",
             hover_data=["Sector_Benchmark"],
         )
+        fig_beta_s.update_layout(title="Rolling Beta vs Sector Benchmark")
         apply_axis_and_hover_format(fig_beta_s, DISPLAY_SIG_FIGS, y_is_percent=False, y_label="Beta")
         st.plotly_chart(fig_beta_s, use_container_width=True)
 
@@ -862,10 +875,13 @@ with tab_sec:
             ycol, ylab, is_pct = "alpha", "Alpha (weekly)", False
 
         fig_alpha_s = px.line(
-            df_alpha_s, x="Date", y=ycol, color="Label",
-            title="Rolling Alpha vs Sector Benchmark (weekly)",
+            df_alpha_s,
+            x="Date",
+            y=ycol,
+            color="Label",
             hover_data=["Sector_Benchmark"],
         )
+        fig_alpha_s.update_layout(title="Rolling Alpha vs Sector Benchmark (weekly)")
         apply_axis_and_hover_format(fig_alpha_s, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
         st.plotly_chart(fig_alpha_s, use_container_width=True)
 
@@ -873,7 +889,9 @@ with tab_sec:
             export_rs = df_rs.copy()
             if FORMAT_EXPORTS:
                 for col in ["beta", "alpha"]:
-                    export_rs[col] = export_rs[col].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
+                    export_rs[col] = export_rs[col].map(
+                        lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
+                    )
             st.download_button(
                 "Download rolling vs sector (CSV)",
                 export_rs.to_csv(index=False).encode("utf-8"),
@@ -881,10 +899,14 @@ with tab_sec:
                 "text/csv",
             )
 
+# ----------------------------
+# Tab 3: Rolling Discount Rate
+# ----------------------------
 with tab_disc:
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * TRADING_WEEKS
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * TRADING_WEEKS
 
+    # If custom MRP is enabled, use a constant annual MRP; otherwise use rolling MRP.
     mrp_used_ann = pd.Series(mrp_annual_log, index=common_dates) if use_custom_mrp else mrp_roll_ann
 
     disc_rows = []
@@ -916,20 +938,15 @@ with tab_disc:
         else:
             ycol, ylab, is_pct = "DiscountRate", "Discount Rate (annual, log)", False
 
-        # Title + caption in Streamlit (so caption sits *under* the subtitle)
+        # Subtitle + caption placed in Streamlit so caption sits directly under it
         st.subheader("Rolling Discount Rate (Annualized, log approx)")
         st.caption(
             "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
             "Rolling RF and rolling MRP are computed over the same rolling window."
         )
 
-        # Plotly chart WITHOUT a title (title is handled by st.subheader above)
-        fig_disc = px.line(
-            df_disc_plot,
-            x="Date",
-            y=ycol,
-            color="Label",
-        )
+        # Plotly chart without a title (subtitle handled by st.subheader above)
+        fig_disc = px.line(df_disc_plot, x="Date", y=ycol, color="Label")
         apply_axis_and_hover_format(fig_disc, DISPLAY_SIG_FIGS, y_is_percent=is_pct, y_label=ylab)
         st.plotly_chart(fig_disc, use_container_width=True)
 
@@ -946,41 +963,9 @@ with tab_disc:
                 "text/csv",
             )
 
-st.subheader("Rolling Discount Rate (Annualized, log approx)")
-
-st.caption(
-    "Discount rate (annualized, log approx): RF annual + rolling beta × MRP annual. "
-    "Rolling RF and rolling MRP are computed over the same rolling window."
-)
-
-fig_disc = px.line(
-    df_disc_plot,
-    x="Date",
-    y=ycol,
-    color="Label",
-)
-
-apply_axis_and_hover_format(
-    fig_disc,
-    DISPLAY_SIG_FIGS,
-    y_is_percent=is_pct,
-    y_label=ylab
-)
-
-st.plotly_chart(fig_disc, use_container_width=True)
-
-
-        if exports_enabled:
-            export_disc = df_disc.copy()
-            if FORMAT_EXPORTS:
-                export_disc["DiscountRate"] = export_disc["DiscountRate"].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
-            st.download_button(
-                "Download rolling discount rate (CSV)",
-                export_disc.to_csv(index=False).encode("utf-8"),
-                "rolling_discount_rate.csv",
-                "text/csv",
-            )
-
+# ----------------------------
+# Tab 4: Rolling Alpha t-Stats
+# ----------------------------
 with tab_tstat:
     st.caption(
         "Rolling alpha t-statistics from a rolling CAPM regression. "
@@ -1002,25 +987,30 @@ with tab_tstat:
             st.warning("No rolling alpha t-stats vs market. Try a smaller window (e.g., 52).")
         else:
             df_rt = pd.concat(rows, ignore_index=True)
-            fig = px.line(df_rt, x="Date", y="alpha_t", color="Label", title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Market)")
+
+            fig = px.line(df_rt, x="Date", y="alpha_t", color="Label")
+            fig.update_layout(title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Market)")
             fig.add_hline(y=2, line_dash="dash", line_color="gray")
             fig.add_hline(y=-2, line_dash="dash", line_color="gray")
             fig.update_yaxes(title="Alpha t-stat", tickformat=f".{DISPLAY_SIG_FIGS}g")
-            fig.update_traces(hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>")
+            fig.update_traces(
+                hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>"
+            )
             st.plotly_chart(fig, use_container_width=True)
 
             if exports_enabled:
                 export_df = df_rt[["Date", "Label", "alpha", "beta", "alpha_t", "beta_t"]].copy()
                 if FORMAT_EXPORTS:
                     for c in ["alpha", "beta", "alpha_t", "beta_t"]:
-                        export_df[c] = export_df[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
+                        export_df[c] = export_df[c].map(
+                            lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
+                        )
                 st.download_button(
                     "Download rolling alpha t-stats vs market (CSV)",
                     export_df.to_csv(index=False).encode("utf-8"),
                     "rolling_alpha_tstats_vs_market.csv",
                     "text/csv",
                 )
-
     else:
         for t in excess_stocks.columns:
             sec = selected_ticker_sector.get(t)
@@ -1038,25 +1028,30 @@ with tab_tstat:
             st.warning("No rolling alpha t-stats vs sector benchmark. Try a smaller window (e.g., 52).")
         else:
             df_rt = pd.concat(rows, ignore_index=True)
-            fig = px.line(df_rt, x="Date", y="alpha_t", color="Label", title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Sector Benchmark)", hover_data=["Sector_Benchmark"])
+
+            fig = px.line(df_rt, x="Date", y="alpha_t", color="Label", hover_data=["Sector_Benchmark"])
+            fig.update_layout(title=f"Rolling Alpha t-Statistics ({horizon_weeks}-Week Window, Sector Benchmark)")
             fig.add_hline(y=2, line_dash="dash", line_color="gray")
             fig.add_hline(y=-2, line_dash="dash", line_color="gray")
             fig.update_yaxes(title="Alpha t-stat", tickformat=f".{DISPLAY_SIG_FIGS}g")
-            fig.update_traces(hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>")
+            fig.update_traces(
+                hovertemplate=f"Date=%{{x}}<br>Alpha t=%{{y:.{DISPLAY_SIG_FIGS}g}}<extra></extra>"
+            )
             st.plotly_chart(fig, use_container_width=True)
 
             if exports_enabled:
                 export_df = df_rt[["Date", "Label", "Sector_Benchmark", "alpha", "beta", "alpha_t", "beta_t"]].copy()
                 if FORMAT_EXPORTS:
                     for c in ["alpha", "beta", "alpha_t", "beta_t"]:
-                        export_df[c] = export_df[c].map(lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v)
+                        export_df[c] = export_df[c].map(
+                            lambda v: float(f"{v:.{DISPLAY_SIG_FIGS}g}") if pd.notna(v) else v
+                        )
                 st.download_button(
                     "Download rolling alpha t-stats vs sector (CSV)",
                     export_df.to_csv(index=False).encode("utf-8"),
                     "rolling_alpha_tstats_vs_sector.csv",
                     "text/csv",
                 )
-
 
 # ============================================================
 # 11A) SUMMARY METRICS (ANNUALIZED) + DISCOUNT RATE + R2 / ADJ R2
@@ -1229,6 +1224,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
