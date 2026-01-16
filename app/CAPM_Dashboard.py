@@ -637,10 +637,6 @@ if exports_enabled:
 st.subheader("Macro Inputs: Risk-Free Rate & Market Risk Premium")
 
 st.caption(
-    "The weekly excess return of the market in relation to the risk-free rate (3m T-bill). "
-)
-
-st.caption(
     "These series provide macro context for CAPM outputs. "
     "Market Risk Premium (MRP) is computed as Market_Log_Return − RF_Log_Return using weekly log returns."
 )
@@ -650,6 +646,9 @@ tab_weekly, tab_roll, tab_cum_rf = st.tabs(
 )
 
 with tab_weekly:
+    st.caption(
+    "The weekly excess return of the market (S&P 500) in relation to the risk-free rate (3m T-bill). "
+        
     df_weekly = pd.DataFrame(
         {
             "Date": mkt_rf.index,
@@ -669,14 +668,13 @@ with tab_weekly:
 
     df_weekly_melt = df_weekly.melt(id_vars="Date", var_name="Series", value_name="Value")
     fig_weekly = px.line(df_weekly_melt, x="Date", y="Value", color="Series", title="Weekly Risk-Free Rate and Market Risk Premium")
-
-    st.caption(
-    "The rolling average of the risk-free rate and market risk premium. "
-        
     apply_axis_and_hover_format(fig_weekly, DISPLAY_SIG_FIGS, y_is_percent=y_is_pct, y_label=y_label)
     st.plotly_chart(fig_weekly, use_container_width=True)
 
 with tab_roll:
+    st.caption(
+    "The rolling average of the risk-free rate and market risk premium. "
+    
     rf_roll_ann = mkt_rf["RF_Log_Return"].rolling(horizon_weeks).mean() * 52.0
     mrp_roll_ann = excess_market.rolling(horizon_weeks).mean() * 52.0
 
@@ -703,6 +701,9 @@ with tab_roll:
     st.plotly_chart(fig_roll, use_container_width=True)
 
 with tab_cum_rf:
+    st.caption(
+    "The total growth of of $1 investment in the market (S&P 500) and the risk-free (3m T-bill) from 2014 to current. "
+    
     df_cum_rf = pd.DataFrame(
         {
             "Date": mkt_rf.index,
@@ -722,9 +723,6 @@ with tab_cum_rf:
 # ============================================================
 st.subheader("Rolling Beta, Alpha, and Discount Rate (Excess Returns)")
 
-st.caption(
-    "The rolling average of the risk-free rate and market risk premium. "
-)
 tab_mkt, tab_sec, tab_disc, tab_tstat = st.tabs(
     [
         "Rolling vs Market",
@@ -1080,6 +1078,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
