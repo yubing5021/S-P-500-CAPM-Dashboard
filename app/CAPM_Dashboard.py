@@ -1063,6 +1063,7 @@ with tab_tstat:
 
 # ============================================================
 # 11A) SUMMARY METRICS (ANNUALIZED) + DISCOUNT RATE + R2 / ADJ R2
+#     + ADD MARKET + SECTOR BENCHMARK ROWS
 # ============================================================
 
 st.subheader("Summary Metrics (Annualized)")
@@ -1070,6 +1071,87 @@ st.subheader("Summary Metrics (Annualized)")
 rf_annual_log = annualize_log_mean(mkt_rf["RF_Log_Return"].mean())
 
 summary_rows: List[dict] = []
+
+# ------------------------------------------------------------
+# (A) Market benchmark row (S&P 500)
+# ------------------------------------------------------------
+mkt_r = mkt_rf["Market_Log_Return"].dropna()
+mkt_rf_aligned = mkt_rf["RF_Log_Return"].loc[mkt_r.index]
+mkt_ex = (mkt_r - mkt_rf_aligned).dropna()
+
+ann_ret_mkt = annualize_log_mean(mkt_r.mean())
+ann_vol_mkt = annualize_vol(mkt_r.std(ddof=0))
+ann_ex_mkt = annualize_log_mean(mkt_ex.mean())
+sharpe_mkt = float(ann_ex_mkt / ann_vol_mkt) if ann_vol_mkt and ann_vol_mkt != 0 and not np.isnan(ann_vol_mkt) else np.nan
+
+# By construction, Market beta vs Market = 1, alpha = 0
+disc_rate_mkt = float(rf_annual_log + 1.0 * mrp_annual_log)
+
+summary_rows.append(
+    {
+        "Label": "Market (S&P 500)",
+        "Obs": int(len(mkt_ex)),
+        "Discount_Rate_Annual_(log)": disc_rate_mkt,
+        "Ann_Return_(log)": float(ann_ret_mkt),
+        "Ann_Vol": float(ann_vol_mkt),
+        "Ann_Excess_Return_(log)": float(ann_ex_mkt),
+        "Sharpe": sharpe_mkt,
+        "Beta_vs_Market": 1.0,
+        "Alpha_vs_Market_(weekly)": 0.0,
+        "Beta_tstat_vs_Market": np.nan,
+        "Alpha_tstat_vs_Market": np.nan,
+        "R2_vs_Market": 1.0,
+        "Adj_R2_vs_Market": 1.0,
+    }
+)
+
+# ------------------------------------------------------------
+# (B) Sector benchmark rows (for selected sectors)
+#     Uses the sector return series that are already aligned (sectors_wide / excess_sectors).
+# ------------------------------------------------------------
+for sec in sectors_wide.columns:
+    r_sec = sectors_wide[sec].dropna()
+    if r_sec.empty:
+        continue
+
+    rf_sec = mkt_rf["RF_Log_Return"].loc[r_sec.index]
+    ex_sec = (r_sec - rf_sec).dropna()
+
+    ann_ret = annualize_log_mean(r_sec.mean())
+    ann_vol = annualize_vol(r_sec.std(ddof=0))
+    ann_ex = annualize_log_mean(ex_sec.mean())
+    sharpe = float(ann_ex / ann_vol) if ann_vol and ann_vol != 0 and not np.isnan(ann_vol) else np.nan
+
+    reg = capm_ols_metrics(ex_sec, excess_market.loc[ex_sec.index])
+    beta = reg.get("beta", np.nan)
+
+    disc_rate_annual_log = (
+        float(rf_annual_log + beta * mrp_annual_log)
+        if np.isfinite(beta)
+        else np.nan
+    )
+
+    summary_rows.append(
+        {
+            "Label": f"Sector: {sec}",
+            "Obs": reg.get("n", len(ex_sec)),
+            "Discount_Rate_Annual_(log)": disc_rate_annual_log,
+            "Ann_Return_(log)": float(ann_ret),
+            "Ann_Vol": float(ann_vol),
+            "Ann_Excess_Return_(log)": float(ann_ex),
+            "Sharpe": sharpe,
+            "Beta_vs_Market": reg.get("beta", np.nan),
+            "Alpha_vs_Market_(weekly)": reg.get("alpha", np.nan),
+            "Beta_tstat_vs_Market": reg.get("beta_t", np.nan),
+            "Alpha_tstat_vs_Market": reg.get("alpha_t", np.nan),
+            "R2_vs_Market": reg.get("r2", np.nan),
+            "Adj_R2_vs_Market": reg.get("adj_r2", np.nan),
+        }
+    )
+
+# ------------------------------------------------------------
+# (C) Selected tickers (existing logic)
+# ------------------------------------------------------------
 for t in stocks_wide.columns:
     r = stocks_wide[t].dropna()
     if r.empty:
@@ -1110,103 +1192,20 @@ for t in stocks_wide.columns:
         }
     )
 
-summary_df = pd.DataFrame(summary_rows).set_index("Label").sort_index()
-
 # ------------------------------------------------------------
-# 11B) Display formatting (percent vs numeric)
+# Build final table (keeps your existing downstream formatting + tooltips)
 # ------------------------------------------------------------
-summary_df_display = summary_df.copy()
+summary_df = pd.DataFrame(summary_rows).set_index("Label")
 
-rate_cols = {
-    "Discount_Rate_Annual_(log)",
-    "Ann_Return_(log)",
-    "Ann_Vol",
-    "Ann_Excess_Return_(log)",
-    "Alpha_vs_Market_(weekly)",
-}
+# Optional: stable ordering (Market first, then Sectors, then tickers) + alphabetic within groups
+def _summary_sort_key(idx: str) -> tuple:
+    if idx.startswith("Market"):
+        return (0, idx)
+    if idx.startswith("Sector:"):
+        return (1, idx)
+    return (2, idx)
 
-for col in summary_df_display.columns:
-    if pd.api.types.is_numeric_dtype(summary_df_display[col]):
-        if DISPLAY_PCT and col in rate_cols:
-            summary_df_display[col] = summary_df_display[col].map(
-                lambda v: sig_pct_str(v, DISPLAY_SIG_FIGS)
-            )
-        else:
-            summary_df_display[col] = summary_df_display[col].map(
-                lambda v: sig_str(v, DISPLAY_SIG_FIGS)
-            )
-
-# ------------------------------------------------------------
-# 11C) Render table with column-level hover tooltips
-# ------------------------------------------------------------
-st.dataframe(
-    summary_df_display,
-    use_container_width=True,
-    column_config={
-        "Obs": st.column_config.NumberColumn(
-            "Obs",
-            help="Number of weekly observations used in the CAPM regression."
-        ),
-        "Discount_Rate_Annual_(log)": st.column_config.NumberColumn(
-            "Discount Rate (Annual, log)",
-            help="The required return on equity implied by the stock’s exposure to systematic market risk."
-        ),
-        "Ann_Return_(log)": st.column_config.NumberColumn(
-            "Annual Return (log)",
-            help="Average realized annual return computed from weekly log returns."
-        ),
-        "Ann_Vol": st.column_config.NumberColumn(
-            "Annualized Volatility",
-            help="The standard deviation of a ticker’s annualized returns i.e., how much returns typically fluctuate around the mean."
-        ),
-        "Ann_Excess_Return_(log)": st.column_config.NumberColumn(
-            "Annual Excess Return (log)",
-            help="Average annual return in excess of the risk-free rate."
-        ),
-        "Sharpe": st.column_config.NumberColumn(
-            "Sharpe Ratio",
-            help="Excess return per unit of total risk (volatility). Higher = Better"
-        ),
-        "Beta_vs_Market": st.column_config.NumberColumn(
-            "Beta vs Market",
-            help="CAPM beta measuring sensitivity to market excess returns; a beta of 1 indicates market-level risk."
-        ),
-        "Alpha_vs_Market_(weekly)": st.column_config.NumberColumn(
-            "Alpha (Weekly)",
-            help="CAPM alpha representing the average weekly excess return unexplained by market risk."
-        ),
-        "Beta_tstat_vs_Market": st.column_config.NumberColumn(
-            "Beta t-stat",
-            help="  ∣t∣≥1.96→ indicates beta is statistically different from zero at ~5%, implying reliable exposure to market risk."
-        ),
-        "Alpha_tstat_vs_Market": st.column_config.NumberColumn(
-            "Alpha t-stat",
-            help="  ∣t∣≥1.96→ indicates alpha is statistically different from zero at ~5%, implying statistically significant abnormal returns."
-        ),
-        "R2_vs_Market": st.column_config.NumberColumn(
-            "R² vs Market",
-            help="Fraction of return variance explained by market movements."
-        ),
-        "Adj_R2_vs_Market": st.column_config.NumberColumn(
-            "Adjusted R² vs Market",
-            help="R² adjusted for model complexity; nearly identical to R² in a single-factor CAPM."
-        ),
-    },
-)
-
-# ------------------------------------------------------------
-# 11D) Footnote: Market Risk Premium used
-# ------------------------------------------------------------
-mrp_note = (
-    sig_pct_str(mrp_annual_log, DISPLAY_SIG_FIGS)
-    if DISPLAY_PCT
-    else sig_str(mrp_annual_log, DISPLAY_SIG_FIGS)
-)
-
-st.caption(
-    f"Market Risk Premium used (annual, log approx): {mrp_note} "
-    f"({'custom' if use_custom_mrp else 'historical from aligned data'})"
-)
+summary_df = summary_df.loc[sorted(summary_df.index, key=_summary_sort_key)]
 
 # ============================================================
 # 12) FOOTNOTE
@@ -1232,6 +1231,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
