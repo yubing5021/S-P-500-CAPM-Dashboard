@@ -1207,6 +1207,103 @@ def _summary_sort_key(idx: str) -> tuple:
 
 summary_df = summary_df.loc[sorted(summary_df.index, key=_summary_sort_key)]
 
+# ------------------------------------------------------------
+# 11B) Display formatting (percent vs numeric)
+# ------------------------------------------------------------
+summary_df_display = summary_df.copy()
+
+rate_cols = {
+    "Discount_Rate_Annual_(log)",
+    "Ann_Return_(log)",
+    "Ann_Vol",
+    "Ann_Excess_Return_(log)",
+    "Alpha_vs_Market_(weekly)",
+}
+
+for col in summary_df_display.columns:
+    if pd.api.types.is_numeric_dtype(summary_df_display[col]):
+        if DISPLAY_PCT and col in rate_cols:
+            summary_df_display[col] = summary_df_display[col].map(
+                lambda v: sig_pct_str(v, DISPLAY_SIG_FIGS)
+            )
+        else:
+            summary_df_display[col] = summary_df_display[col].map(
+                lambda v: sig_str(v, DISPLAY_SIG_FIGS)
+            )
+
+# ------------------------------------------------------------
+# 11C) Render table with column-level hover tooltips
+# ------------------------------------------------------------
+st.dataframe(
+    summary_df_display,
+    use_container_width=True,
+    column_config={
+        "Obs": st.column_config.NumberColumn(
+            "Obs",
+            help="Number of weekly observations used in the CAPM regression."
+        ),
+        "Discount_Rate_Annual_(log)": st.column_config.NumberColumn(
+            "Discount Rate (Annual, log)",
+            help="The required return on equity implied by the stock’s exposure to systematic market risk."
+        ),
+        "Ann_Return_(log)": st.column_config.NumberColumn(
+            "Annual Return (log)",
+            help="Average realized annual return computed from weekly log returns."
+        ),
+        "Ann_Vol": st.column_config.NumberColumn(
+            "Annualized Volatility",
+            help="The standard deviation of a ticker’s annualized returns i.e., how much returns typically fluctuate around the mean."
+        ),
+        "Ann_Excess_Return_(log)": st.column_config.NumberColumn(
+            "Annual Excess Return (log)",
+            help="Average annual return in excess of the risk-free rate."
+        ),
+        "Sharpe": st.column_config.NumberColumn(
+            "Sharpe Ratio",
+            help="Excess return per unit of total risk (volatility). Higher = Better"
+        ),
+        "Beta_vs_Market": st.column_config.NumberColumn(
+            "Beta vs Market",
+            help="CAPM beta measuring sensitivity to market excess returns; a beta of 1 indicates market-level risk."
+        ),
+        "Alpha_vs_Market_(weekly)": st.column_config.NumberColumn(
+            "Alpha (Weekly)",
+            help="CAPM alpha representing the average weekly excess return unexplained by market risk."
+        ),
+        "Beta_tstat_vs_Market": st.column_config.NumberColumn(
+            "Beta t-stat",
+            help="  ∣t∣≥1.96→ indicates beta is statistically different from zero at ~5%, implying reliable exposure to market risk."
+        ),
+        "Alpha_tstat_vs_Market": st.column_config.NumberColumn(
+            "Alpha t-stat",
+            help="  ∣t∣≥1.96→ indicates alpha is statistically different from zero at ~5%, implying statistically significant abnormal returns."
+        ),
+        "R2_vs_Market": st.column_config.NumberColumn(
+            "R² vs Market",
+            help="Fraction of return variance explained by market movements."
+        ),
+        "Adj_R2_vs_Market": st.column_config.NumberColumn(
+            "Adjusted R² vs Market",
+            help="R² adjusted for model complexity; nearly identical to R² in a single-factor CAPM."
+        ),
+    },
+)
+
+# ------------------------------------------------------------
+# 11D) Footnote: Market Risk Premium used
+# ------------------------------------------------------------
+mrp_note = (
+    sig_pct_str(mrp_annual_log, DISPLAY_SIG_FIGS)
+    if DISPLAY_PCT
+    else sig_str(mrp_annual_log, DISPLAY_SIG_FIGS)
+)
+
+st.caption(
+    f"Market Risk Premium used (annual, log approx): {mrp_note} "
+    f"({'custom' if use_custom_mrp else 'historical from aligned data'})"
+)
+
+
 # ============================================================
 # 12) FOOTNOTE
 # ============================================================
@@ -1231,6 +1328,7 @@ st.markdown(
     Use **52 weeks** for a more “current” view and **156 weeks** for a more “structural” view.
     """
 )
+
 
 
 
