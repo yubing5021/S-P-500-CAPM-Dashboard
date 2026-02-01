@@ -396,3 +396,193 @@ if run_btn:
         file_name=CFG.panel_out,
         mime="text/csv",
     )
+
+# ============================================================
+# 7) 10Y STATS + COV/CORR + PORTFOLIOS (AUDIT-READY)
+# ============================================================
+
+st.header("10-Year Fund Statistics (Monthly → Annualized)")
+
+# --- Prepare 10-year window using last available date in panel
+panel_stats = panel.copy()
+panel_stats["Date"] = pd.to_datetime(panel_stats["Date"])
+
+last_dt = panel_stats["Date"].max()
+ten_years_ago = (last_dt.to_period("M") - 120).to_timestamp("M")  # 120 months back
+panel_10y = panel_stats[panel_stats["Date"] > ten_years_ago].copy()
+
+st.caption(f"10-year window: {ten_years_ago.date()} → {last_dt.date()} (most recent available)")
+
+# --- Pivot to monthly log returns matrix: rows=Date, cols=Ticker
+R = (
+    panel_10y.pivot_table(index="Date", columns="Ticker", values="Log_Return", aggfunc="mean")
+    .sort_index()
+)
+
+# --- Basic data quality / coverage
+coverage = R.notna().sum().sort_values(ascending=False).to_frame("months_available")
+coverage["months_missing"] = R.shape[0] - coverage["months_available"]
+st.subheader("Coverage (months in 10-year window)")
+st.dataframe(coverage, use_container_width=True)
+
+# Optionally: drop tickers with too few observations
+min_months = st.slider("Minimum months required (drop funds below threshold)", 24, 120, 108)
+keep = coverage.index[coverage["months_available"] >= min_months].tolist()
+R = R[keep]
+
+if R.shape[1] < 1:
+    st.error("No funds meet the minimum months threshold. Lower the threshold or add more tickers.")
+    st.stop()
+
+# --- Align: drop rows where all are NaN; then (audit choice) drop any rows with missing values
+R = R.dropna(how="all")
+drop_mode = st.selectbox(
+    "Missing data handling for matrices",
+    ["Listwise delete (drop any row with NaN)", "Pairwise (cov/corr use available pairs)"],
+    index=0
+)
+
+if drop_mode.startswith("Listwise"):
+    R_mat = R.dropna(axis=0, how="any")
+else:
+    R_mat = R  # cov() will be pairwise by default
+
+# ============================================================
+# A) Per-fund annualized stats (from monthly log returns)
+# ============================================================
+
+# Mean of monthly log returns
+mu_m_log = R.mean(skipna=True)
+
+# Geometric mean annual return: exp(12 * mean(log_r_m)) - 1
+geo_ann = np.expm1(12.0 * mu_m_log)
+
+# Monthly std dev of log returns; annualize with sqrt(12)
+sig_m = R.std(ddof=1, skipna=True)
+sig_ann = sig_m * math.sqrt(12.0)
+
+stats = pd.DataFrame({
+    "Geometric_Mean_Return_Annual": geo_ann,
+    "Volatility_Annual": sig_ann,
+    "Mean_LogReturn_Monthly": mu_m_log,
+    "Std_LogReturn_Monthly": sig_m,
+}).sort_index()
+
+st.subheader("Per-Fund Annual Statistics (computed from monthly data)")
+st.dataframe(stats.style.format({
+    "Geometric_Mean_Return_Annual": "{:.4%}",
+    "Volatility_Annual": "{:.4%}",
+    "Mean_LogReturn_Monthly": "{:.6f}",
+    "Std_LogReturn_Monthly": "{:.6f}",
+}), use_container_width=True)
+
+# ============================================================
+# B) Variance–Covariance & Correlation Matrices
+# ============================================================
+
+cov_m = R_mat.cov()            # monthly covariance of log returns
+cov_ann = cov_m * 12.0         # annualized covariance (audit rule)
+
+corr = R_mat.corr()
+
+st.subheader("Annualized Variance–Covariance Matrix (from monthly cov × 12)")
+st.dataframe(cov_ann, use_container_width=True)
+
+st.subheader("Correlation Matrix (monthly)")
+st.dataframe(corr, use_container_width=True)
+
+# ============================================================
+# C) Portfolio Calculations
+# ============================================================
+
+st.header("Portfolio Return & Volatility")
+
+st.markdown(
+    """
+Enter one or more portfolios as weights.  
+**Format:** `TICKER=weight, TICKER=weight, ...`  
+Weights can be decimals and do not have to sum to 1 (we can normalize).
+"""
+)
+
+normalize = st.checkbox("Normalize weights to sum to 1", value=True)
+
+port_text = st.text_area(
+    "Portfolios (one per line)",
+    value="PORT1: VFINX=0.60, FCNTX=0.40\nPORT2: VFINX=0.50, FCNTX=0.50",
+    height=140
+)
+
+def parse_portfolios(text: str) -> Dict[str, Dict[str, float]]:
+    ports: Dict[str, Dict[str, float]] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if ":" in line:
+            name, rhs = line.split(":", 1)
+            name = name.strip()
+        else:
+            name, rhs = f"PORT{len(ports)+1}", line
+
+        weights: Dict[str, float] = {}
+        for part in rhs.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "=" not in part:
+                continue
+            t, w = part.split("=", 1)
+            t = t.strip()
+            w = float(w.strip())
+            weights[t] = w
+        if weights:
+            ports[name] = weights
+    return ports
+
+ports = parse_portfolios(port_text)
+
+if not ports:
+    st.info("Add portfolio definitions above to compute portfolio stats.")
+else:
+    tickers_used = list(stats.index)
+    covA = cov_ann.loc[tickers_used, tickers_used]
+
+    results = []
+    for pname, wdict in ports.items():
+        # Build weight vector aligned to tickers_used
+        w = pd.Series(0.0, index=tickers_used)
+        for t, wt in wdict.items():
+            if t not in w.index:
+                # ignore unknown tickers (audit: explicit)
+                continue
+            w.loc[t] = wt
+
+        if normalize:
+            s = w.sum()
+            if s != 0:
+                w = w / s
+
+        # Portfolio annual geometric mean (linear combination of annual geo means)
+        # Audit note: using fund-level annual geo estimates for portfolio mean estimate.
+        rp = float((w * stats["Geometric_Mean_Return_Annual"]).sum())
+
+        # Portfolio annual vol from annualized covariance
+        var_p = float(w.T @ covA.values @ w.values)
+        vol_p = math.sqrt(var_p) if var_p >= 0 else float("nan")
+
+        results.append({
+            "Portfolio": pname,
+            "Return_Annual_Geometric_Est": rp,
+            "Volatility_Annual": vol_p,
+            "Weights_Sum": float(w.sum()),
+            "Num_Funds_Used": int((w != 0).sum()),
+        })
+
+    port_df = pd.DataFrame(results).set_index("Portfolio")
+    st.subheader("Portfolio Results")
+    st.dataframe(port_df.style.format({
+        "Return_Annual_Geometric_Est": "{:.4%}",
+        "Volatility_Annual": "{:.4%}",
+        "Weights_Sum": "{:.4f}",
+    }), use_container_width=True)
