@@ -133,11 +133,11 @@ def monthly_log_return_from_price(price: pd.Series) -> pd.Series:
 def fetch_fred_series_csv(series_id: str, start_date: str, end_date: str,
                           timeout_s: int, user_agent: str) -> pd.DataFrame:
     """
-    Fetch a FRED series through the official CSV endpoint.
+    Fetch a FRED time series via CSV.
 
-    Audit notes:
-    - Uses "fredgraph.csv" which is stable and widely used.
-    - Converts values to numeric; '.' or missing values become NaN.
+    Audit note:
+    - FRED may return either DATE or observation_date as the date column
+      depending on endpoint/format changes.
     """
     url = "https://fred.stlouisfed.org/graph/fredgraph.csv"
     params = {"id": series_id, "cosd": start_date, "coed": end_date}
@@ -146,47 +146,27 @@ def fetch_fred_series_csv(series_id: str, start_date: str, end_date: str,
     resp = requests.get(url, params=params, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
 
-    # Read CSV from text for reliability
     from io import StringIO
     df = pd.read_csv(StringIO(resp.text))
 
-    # Expected schema: DATE, <series_id>
-    if "DATE" not in df.columns or series_id not in df.columns:
-        raise ValueError(f"Unexpected FRED CSV schema. Columns: {list(df.columns)}")
+    # Accept multiple possible date column names
+    date_col = None
+    for c in ("DATE", "observation_date", "date"):
+        if c in df.columns:
+            date_col = c
+            break
 
-    df["Date"] = pd.to_datetime(df["DATE"])
+    if date_col is None:
+        raise ValueError(f"Unexpected FRED CSV schema (no date column). Columns: {list(df.columns)}")
+
+    if series_id not in df.columns:
+        raise ValueError(f"Unexpected FRED CSV schema (missing series column {series_id}). Columns: {list(df.columns)}")
+
+    df["Date"] = pd.to_datetime(df[date_col])
     df[series_id] = pd.to_numeric(df[series_id], errors="coerce")
 
     out = df[["Date", series_id]].dropna().sort_values("Date")
     return out
-
-
-@st.cache_data(show_spinner=False, ttl=60 * 60)
-def fetch_rf_dgs30_monthly(start_date: str, end_date: str) -> pd.DataFrame:
-    """
-    Convert DGS30 daily yield (%) to month-end and then to monthly log risk-free.
-
-    Audit assumption:
-    RF_Log_Return = log(1 + (DGS30/100)/12)
-
-    This is an approximation. It is NOT a bond total return index.
-    """
-    rf_daily = fetch_fred_series_csv(
-        series_id=CFG.rf_series,
-        start_date=start_date,
-        end_date=end_date,
-        timeout_s=CFG.http_timeout_s,
-        user_agent=CFG.user_agent,
-    )
-
-    rf_daily = rf_daily.set_index("Date").sort_index()
-    rf_m = rf_daily.resample("M").last().reset_index()
-
-    rf_m["RF_Log_Return"] = np.log1p((rf_m[CFG.rf_series] / 100.0) / 12.0)
-    rf_m["Date"] = enforce_month_end(rf_m["Date"])
-
-    return rf_m[["Date", "RF_Log_Return"]].dropna().sort_values("Date")
-
 
 # ============================================================
 # 4) YFINANCE (MONTHLY PRICES)
