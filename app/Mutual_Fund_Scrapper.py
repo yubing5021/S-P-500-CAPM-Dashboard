@@ -1,37 +1,37 @@
 """
-Mutual Fund Scrapper (Monthly, 2010 → Present) — Audit-Ready (Streamlit Cloud Safe)
+Mutual Fund Scrapper (Monthly, 2010 → Present) — Audit-Ready + Analytics (10Y)
 
-PURPOSE
--------
-Download monthly mutual fund (or any Yahoo Finance symbol) price history,
-compute monthly log returns, and merge a risk-free proxy based on the
-30-year US Treasury constant maturity yield (FRED: DGS30).
+WHAT THIS APP DOES
+------------------
+1) Downloads monthly mutual fund/ETF prices from Yahoo Finance (Adj Close).
+2) Computes monthly log returns per fund.
+3) Downloads risk-free proxy using FRED DGS30 (30Y Treasury yield).
+4) Converts DGS30 to a monthly log risk-free return approximation.
+5) Builds a tidy panel and stores it in Streamlit session_state (robust across reruns).
+6) Computes 10-year (most recent) statistics:
+   - geometric mean return (annualized from monthly log returns)
+   - annualized volatility (monthly std * sqrt(12))
+   - variance-covariance matrix (annualized = monthly cov * 12)
+   - correlation matrix
+7) Computes portfolio return/vol for user-provided weight definitions.
 
-DEPLOYMENT NOTE
----------------
-Streamlit Cloud often runs Python 3.13+. pandas_datareader currently fails
-under Python 3.12+ due to distutils removal. Therefore, this script fetches
-FRED data via the official CSV endpoint using requests + pandas.
-
-DATA SOURCES
-------------
-1) Prices: Yahoo Finance via yfinance (monthly interval, Adj Close)
-2) Risk-Free: FRED DGS30 via https://fred.stlouisfed.org/graph/fredgraph.csv
-
-ASSUMPTIONS (AUDIT-RELEVANT)
+DEPLOYMENT NOTE (IMPORTANT)
 ---------------------------
-- Fund monthly log return: log(AdjClose_t / AdjClose_{t-1})
-- DGS30 is an annualized yield (%) at daily frequency.
-  We approximate monthly risk-free log return as log(1 + (DGS30/100)/12).
-  This is a rate proxy, NOT a bond total return series.
-- Month-end alignment:
-  - Prices coerced to month-end timestamps.
-  - DGS30 sampled month-end via resample("M").last()
+Streamlit Cloud frequently runs Python 3.13+. pandas_datareader can fail under
+Python 3.12+ due to distutils removal. Therefore, FRED is pulled via the official
+CSV endpoint using requests + pandas.
 
-OUTPUTS
--------
-- Panel CSV (tidy/long): Date, Ticker, Fund_Name, Adj_Close, Log_Return, RF_Log_Return
-- Download button provides the panel as CSV.
+AUDIT-RELEVANT ASSUMPTIONS
+--------------------------
+- Monthly fund log return: r_t = log(AdjClose_t / AdjClose_{t-1})
+- DGS30 is an annualized yield (%) at daily frequency. We approximate monthly RF log
+  return as: RF_Log_Return = log(1 + (DGS30/100)/12).
+  This is a RATE proxy, not a bond total return index.
+- Annualization:
+  * Geometric mean annual return = exp(12 * mean(monthly_log_returns)) - 1
+  * Annualized volatility = std(monthly_log_returns) * sqrt(12)
+  * Annualized covariance = cov(monthly_log_returns) * 12
+- 10-year window: last available month in the downloaded panel minus 120 months.
 
 REQUIREMENTS (repo root requirements.txt)
 -----------------------------------------
@@ -44,6 +44,7 @@ requests
 
 from __future__ import annotations
 
+import math
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -68,10 +69,12 @@ class Config:
     start_date: str = "2010-01-01"
     end_date: str = datetime.today().strftime("%Y-%m-%d")
 
-    interval: str = "1mo"      # Yahoo monthly
-    rf_series: str = "DGS30"   # FRED 30Y yield (% annualized)
+    interval: str = "1mo"      # Yahoo monthly sampling
+    rf_series: str = "DGS30"   # FRED 30Y constant maturity yield (%)
 
-    output_dir: Path = Path("outputs")  # Cloud-safe (ephemeral but ok)
+    # On Streamlit Cloud, filesystem is ephemeral. We write if possible for traceability,
+    # but the download button is the primary export mechanism.
+    output_dir: Path = Path("outputs")
     panel_out: str = "mutual_fund_panel_monthly.csv"
 
     http_timeout_s: int = 20
@@ -94,7 +97,7 @@ def audit_kv(audit: Dict[str, str], k: str, v: object) -> None:
 
 
 def normalize_symbol_for_yahoo(symbol: str) -> str:
-    # Yahoo often uses '-' for share classes (e.g., BRK-B)
+    # Yahoo uses '-' for certain share classes; keep this normalization consistent.
     return str(symbol).strip().replace(".", "-")
 
 
@@ -105,6 +108,7 @@ def parse_tickers(raw: str) -> List[str]:
 
 
 def enforce_month_end(dt: pd.Series) -> pd.Series:
+    # Enforce month-end timestamps to avoid merge/key mismatches.
     return pd.to_datetime(dt).dt.to_period("M").dt.to_timestamp("M")
 
 
@@ -113,7 +117,7 @@ def monthly_log_return_from_price(price: pd.Series) -> pd.Series:
 
 
 # ============================================================
-# 3) FRED (Python 3.13 compatible; robust schema handling)
+# 3) FRED (Python 3.13 compatible; schema-robust)
 # ============================================================
 
 @st.cache_data(show_spinner=False, ttl=60 * 60)
@@ -123,19 +127,19 @@ def fetch_fred_series_csv(
     end_date: str,
     timeout_s: int,
     user_agent: str,
-) -> Tuple[pd.DataFrame, str]:
+) -> Tuple[pd.DataFrame, Dict[str, str]]:
     """
-    Fetch a FRED series via CSV.
+    Fetch a FRED series via the official CSV endpoint.
 
-    IMPORTANT FIX:
-    - FRED CSV date column may be 'DATE' OR 'observation_date' (and sometimes 'date').
-      We accept all three to prevent schema breakages.
+    Robustness fix:
+    - FRED date column can vary: 'DATE' or 'observation_date' (or 'date').
+      We accept all to prevent schema breakage.
 
-    Returns
-    -------
-    (df, date_col_used)
-    df columns: Date, <series_id>
+    Returns:
+    - dataframe with columns: Date, <series_id>
+    - audit dict with schema details
     """
+    audit: Dict[str, str] = {}
     url = "https://fred.stlouisfed.org/graph/fredgraph.csv"
     params = {"id": series_id, "cosd": start_date, "coed": end_date}
     headers = {"User-Agent": user_agent}
@@ -146,7 +150,8 @@ def fetch_fred_series_csv(
     from io import StringIO
     df = pd.read_csv(StringIO(resp.text))
 
-    # Robustly find date column
+    audit_kv(audit, "fred_raw_columns", list(df.columns))
+
     date_col = None
     for c in ("DATE", "observation_date", "date"):
         if c in df.columns:
@@ -157,36 +162,42 @@ def fetch_fred_series_csv(
         raise ValueError(f"Unexpected FRED CSV schema (no date column). Columns: {list(df.columns)}")
 
     if series_id not in df.columns:
-        raise ValueError(
-            f"Unexpected FRED CSV schema (missing series column '{series_id}'). Columns: {list(df.columns)}"
-        )
+        raise ValueError(f"Unexpected FRED CSV schema (missing '{series_id}'). Columns: {list(df.columns)}")
+
+    audit_kv(audit, "fred_date_column_used", date_col)
 
     df["Date"] = pd.to_datetime(df[date_col])
     df[series_id] = pd.to_numeric(df[series_id], errors="coerce")
 
     out = df[["Date", series_id]].dropna().sort_values("Date")
-    return out, date_col
+    audit_kv(audit, "fred_rows_after_dropna", len(out))
+
+    return out, audit
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60)
 def fetch_rf_dgs30_monthly(start_date: str, end_date: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
     """
-    Convert DGS30 daily yield (%) to month-end and then to monthly log risk-free.
+    Convert DGS30 daily yield (%) → month-end → monthly log risk-free return proxy.
 
     RF_Log_Return = log(1 + (DGS30/100)/12)
+
+    Audit note:
+    This is a proxy series. It approximates a monthly continuously-compounded risk-free
+    return derived from an annualized yield.
     """
     audit_rf: Dict[str, str] = {}
 
-    rf_daily, date_col_used = fetch_fred_series_csv(
+    rf_daily, fred_audit = fetch_fred_series_csv(
         series_id=CFG.rf_series,
         start_date=start_date,
         end_date=end_date,
         timeout_s=CFG.http_timeout_s,
         user_agent=CFG.user_agent,
     )
-    audit_kv(audit_rf, "fred_date_column_used", date_col_used)
-    audit_kv(audit_rf, "fred_columns_returned", f"Date,{CFG.rf_series}")
-    audit_kv(audit_rf, "fred_rows_daily", len(rf_daily))
+
+    for k, v in fred_audit.items():
+        audit_kv(audit_rf, k, v)
 
     rf_daily = rf_daily.set_index("Date").sort_index()
     rf_m = rf_daily.resample("M").last().reset_index()
@@ -195,7 +206,9 @@ def fetch_rf_dgs30_monthly(start_date: str, end_date: str) -> Tuple[pd.DataFrame
     rf_m["Date"] = enforce_month_end(rf_m["Date"])
 
     rf_out = rf_m[["Date", "RF_Log_Return"]].dropna().sort_values("Date")
+
     audit_kv(audit_rf, "rf_rows_monthly", len(rf_out))
+    audit_kv(audit_rf, "rf_conversion", "RF_Log_Return = log(1 + (DGS30/100)/12)")
 
     return rf_out, audit_rf
 
@@ -207,8 +220,8 @@ def fetch_rf_dgs30_monthly(start_date: str, end_date: str) -> Tuple[pd.DataFrame
 @st.cache_data(show_spinner=False, ttl=60 * 60)
 def safe_yf_fund_name(ticker: str) -> Optional[str]:
     """
-    Best-effort metadata lookup.
-    Audit note: info() can be slow/rate-limited; cached for stability.
+    Best-effort metadata lookup from Yahoo.
+    Cached for stability; Yahoo metadata can be rate-limited.
     """
     try:
         info = yf.Ticker(ticker).info or {}
@@ -271,17 +284,17 @@ def build_panel(tickers: List[str], start_date: str, end_date: str) -> Tuple[pd.
     audit_kv(audit, "end_date", end_date)
     audit_kv(audit, "yahoo_interval", CFG.interval)
     audit_kv(audit, "fred_series", CFG.rf_series)
-    audit_kv(audit, "rf_conversion", "RF_Log_Return = log(1 + (DGS30/100)/12)")
-    audit_kv(audit, "month_end_alignment", "prices month-end; DGS30 resample M last()")
+    audit_kv(audit, "month_end_alignment", "prices coerced to month-end; FRED resample('M').last()")
 
-    # ---- Prices
+    # Prices
     prices = download_monthly_prices(tickers, start_date, end_date)
     audit_kv(audit, "prices_rows_raw", len(prices))
     audit_kv(audit, "prices_unique_tickers", prices["Ticker"].nunique() if not prices.empty else 0)
 
     if prices.empty:
-        raise ValueError("No price data returned from Yahoo Finance for the provided tickers/date range.")
+        raise ValueError("No price data returned from Yahoo Finance for the tickers/date range.")
 
+    # Returns (log)
     prices["Log_Return"] = prices.groupby("Ticker")["Adj_Close"].transform(monthly_log_return_from_price)
     before = len(prices)
     prices = prices.dropna(subset=["Log_Return"]).copy()
@@ -292,7 +305,7 @@ def build_panel(tickers: List[str], start_date: str, end_date: str) -> Tuple[pd.
     meta = pd.DataFrame({"Ticker": tickers, "Fund_Name": [safe_yf_fund_name(t) for t in tickers]})
     prices = prices.merge(meta, on="Ticker", how="left")
 
-    # ---- Risk-free
+    # Risk-free
     rf, rf_audit = fetch_rf_dgs30_monthly(start_date, end_date)
     for k, v in rf_audit.items():
         audit_kv(audit, f"rf_{k}", v)
@@ -300,7 +313,7 @@ def build_panel(tickers: List[str], start_date: str, end_date: str) -> Tuple[pd.
     if rf.empty:
         raise ValueError("Risk-free series returned empty after processing.")
 
-    # ---- Merge
+    # Merge
     panel = prices.merge(rf, on="Date", how="left")
     audit_kv(audit, "panel_rows_pre_dropna", len(panel))
     audit_kv(audit, "panel_missing_rf_rows", int(panel["RF_Log_Return"].isna().sum()))
@@ -308,18 +321,17 @@ def build_panel(tickers: List[str], start_date: str, end_date: str) -> Tuple[pd.
     panel = panel.dropna(subset=["RF_Log_Return"]).sort_values(["Ticker", "Date"]).reset_index(drop=True)
     audit_kv(audit, "panel_rows_final", len(panel))
 
-    # ---- Quality check: monotonic dates per ticker
+    # Date monotonicity check
     violations = 0
     for t, g in panel.groupby("Ticker"):
         if not g["Date"].is_monotonic_increasing:
             violations += 1
     audit_kv(audit, "monotonic_date_violations_tickers", violations)
 
-    # Coverage preview
+    # Coverage summary
     cov = panel.groupby("Ticker")["Date"].agg(["min", "max", "count"]).reset_index()
     audit_kv(audit, "coverage_preview", cov.head(10).to_string(index=False))
 
-    # Stable schema
     panel = panel[["Date", "Ticker", "Fund_Name", "Adj_Close", "Log_Return", "RF_Log_Return"]]
     return panel, audit
 
@@ -335,31 +347,188 @@ def try_write_csv(panel: pd.DataFrame) -> Tuple[bool, Optional[Path], Optional[s
 
 
 # ============================================================
-# 6) STREAMLIT UI
+# 6) ANALYTICS (10Y stats + cov/corr + portfolios)
+#    NOTE: This function requires a built panel and is called
+#    only when panel exists in session_state.
+# ============================================================
+
+def compute_10y_analytics(panel: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, str]]:
+    """
+    Returns:
+    - stats: per-fund annual geometric mean and annualized vol (computed from monthly data)
+    - cov_ann: annualized covariance matrix (monthly cov * 12)
+    - corr: correlation matrix (monthly)
+    - R_10y: the 10y monthly log return matrix used
+    - audit_stats: audit dictionary describing windowing + missing policy
+    """
+    audit_stats: Dict[str, str] = {}
+
+    panel_stats = panel.copy()
+    panel_stats["Date"] = pd.to_datetime(panel_stats["Date"])
+
+    last_dt = panel_stats["Date"].max()
+    ten_years_ago = (last_dt.to_period("M") - 120).to_timestamp("M")  # 120 months
+    audit_kv(audit_stats, "window_last_date", last_dt.date())
+    audit_kv(audit_stats, "window_start_date", ten_years_ago.date())
+    audit_kv(audit_stats, "window_months_target", 120)
+
+    panel_10y = panel_stats[panel_stats["Date"] > ten_years_ago].copy()
+
+    R = (
+        panel_10y.pivot_table(index="Date", columns="Ticker", values="Log_Return", aggfunc="mean")
+        .sort_index()
+    )
+    audit_kv(audit_stats, "returns_matrix_rows", R.shape[0])
+    audit_kv(audit_stats, "returns_matrix_cols", R.shape[1])
+
+    # Per-fund stats from monthly log returns:
+    mu_m_log = R.mean(skipna=True)
+    sig_m = R.std(ddof=1, skipna=True)
+
+    geo_ann = np.expm1(12.0 * mu_m_log)       # annual geometric mean return
+    sig_ann = sig_m * math.sqrt(12.0)         # annualized volatility
+
+    stats = pd.DataFrame({
+        "Geometric_Mean_Return_Annual": geo_ann,
+        "Volatility_Annual": sig_ann,
+        "Mean_LogReturn_Monthly": mu_m_log,
+        "Std_LogReturn_Monthly": sig_m,
+        "Months_Available": R.notna().sum(),
+    }).sort_index()
+
+    # Covariance/correlation from monthly data then annualize covariance
+    cov_m = R.cov()          # pairwise by default
+    cov_ann = cov_m * 12.0
+    corr = R.corr()
+
+    audit_kv(audit_stats, "annualization_rule_return", "exp(12*mean(log_r_m)) - 1")
+    audit_kv(audit_stats, "annualization_rule_vol", "std(log_r_m)*sqrt(12)")
+    audit_kv(audit_stats, "annualization_rule_cov", "cov_m*12")
+
+    return stats, cov_ann, corr, R, audit_stats
+
+
+def parse_portfolios(text: str) -> Dict[str, Dict[str, float]]:
+    """
+    Parse portfolios from text area.
+
+    Format:
+      PORT1: VFINX=0.6, FCNTX=0.4
+      PORT2: VFINX=0.5, FCNTX=0.5
+    """
+    ports: Dict[str, Dict[str, float]] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        if ":" in line:
+            name, rhs = line.split(":", 1)
+            name = name.strip()
+        else:
+            name, rhs = f"PORT{len(ports)+1}", line
+
+        weights: Dict[str, float] = {}
+        for part in rhs.split(","):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            t, w = part.split("=", 1)
+            t = t.strip()
+            weights[t] = float(w.strip())
+        if weights:
+            ports[name] = weights
+    return ports
+
+
+def compute_portfolios(
+    stats: pd.DataFrame,
+    cov_ann: pd.DataFrame,
+    portfolios: Dict[str, Dict[str, float]],
+    normalize_weights: bool,
+) -> pd.DataFrame:
+    """
+    Portfolio analytics using annualized covariance and annual geometric mean estimates.
+
+    Audit note:
+    - Portfolio mean return is estimated as w' * fund_geo_ann
+      (fund_geo_ann computed from monthly log returns).
+    - Portfolio vol is sqrt(w' * Cov_ann * w).
+    """
+    tickers_used = list(stats.index)
+    covA = cov_ann.loc[tickers_used, tickers_used]
+    muA = stats["Geometric_Mean_Return_Annual"]
+
+    rows = []
+    for pname, wdict in portfolios.items():
+        w = pd.Series(0.0, index=tickers_used)
+
+        ignored = []
+        for t, wt in wdict.items():
+            if t in w.index:
+                w.loc[t] = wt
+            else:
+                ignored.append(t)
+
+        if normalize_weights:
+            s = float(w.sum())
+            if s != 0:
+                w = w / s
+
+        rp = float((w * muA).sum())
+        var_p = float(w.values.T @ covA.values @ w.values)
+        vol_p = math.sqrt(var_p) if var_p >= 0 else float("nan")
+
+        rows.append({
+            "Portfolio": pname,
+            "Return_Annual_Geometric_Est": rp,
+            "Volatility_Annual": vol_p,
+            "Weights_Sum": float(w.sum()),
+            "Num_Funds_Used": int((w != 0).sum()),
+            "Ignored_Tickers": ", ".join(ignored) if ignored else "",
+        })
+
+    out = pd.DataFrame(rows).set_index("Portfolio")
+    return out
+
+
+# ============================================================
+# 7) STREAMLIT UI (ROBUST: session_state as the single source of truth)
 # ============================================================
 
 st.set_page_config(page_title="Mutual Fund Monthly Scraper", layout="wide")
 st.title("Mutual Fund Monthly Scraper (Monthly, 2010 → Present)")
 
+# --- Initialize session_state keys (audit: deterministic app state)
+if "panel" not in st.session_state:
+    st.session_state["panel"] = None
+if "audit_panel" not in st.session_state:
+    st.session_state["audit_panel"] = None
+
 with st.sidebar:
     st.header("Inputs")
-
     tickers_text = st.text_area(
         "Enter tickers (comma or newline separated)",
         value="VFINX, FCNTX",
         height=120,
         help="Works for many mutual funds and ETFs supported by Yahoo Finance.",
     )
-
     start_date = st.text_input("Start date (YYYY-MM-DD)", CFG.start_date)
     end_date = st.text_input("End date (YYYY-MM-DD)", CFG.end_date)
 
-    run_btn = st.button("Pull Data")
+    colA, colB = st.columns(2)
+    with colA:
+        run_btn = st.button("Pull Data", use_container_width=True)
+    with colB:
+        clear_btn = st.button("Clear Results", use_container_width=True)
 
+if clear_btn:
+    st.session_state["panel"] = None
+    st.session_state["audit_panel"] = None
+    st.success("Cleared panel + audit state.")
 
 if run_btn:
     tickers = parse_tickers(tickers_text)
-
     if not tickers:
         st.error("Please enter at least one ticker.")
         st.stop()
@@ -376,213 +545,136 @@ if run_btn:
             st.exception(e)
             st.stop()
 
+    # ROBUST STATE STORE: everything below reads from session_state (no NameError)
+    st.session_state["panel"] = panel
+    st.session_state["audit_panel"] = audit
+
     ok, path, err = try_write_csv(panel)
     st.success("Panel built successfully.")
-
     if ok and path is not None:
         st.caption(f"Local CSV written to: {path} (ephemeral on Streamlit Cloud)")
     elif err:
         st.warning(f"Could not write CSV to disk (download still available). Details: {err}")
 
-    st.subheader("Preview")
-    st.dataframe(panel.head(25), use_container_width=True)
+# --- Read panel from state (single source of truth)
+panel = st.session_state.get("panel", None)
+audit_panel = st.session_state.get("audit_panel", None)
 
-    st.subheader("Audit Notes")
-    st.code("\n".join([f"{k}: {v}" for k, v in audit.items()]))
-
-    st.download_button(
-        "Download panel CSV",
-        data=panel.to_csv(index=False).encode("utf-8"),
-        file_name=CFG.panel_out,
-        mime="text/csv",
-    )
+if panel is None:
+    st.info("Click **Pull Data** to build the panel. Analytics will appear after a successful run.")
+    st.stop()
 
 # ============================================================
-# 7) 10Y STATS + COV/CORR + PORTFOLIOS (AUDIT-READY)
+# 8) PANEL OUTPUTS (preview, audit, download)
+# ============================================================
+
+st.subheader("Panel Preview")
+st.dataframe(panel.head(25), use_container_width=True)
+
+st.subheader("Panel Audit Notes")
+if audit_panel:
+    st.code("\n".join([f"{k}: {v}" for k, v in audit_panel.items()]))
+else:
+    st.caption("No audit dictionary stored (unexpected).")
+
+st.download_button(
+    "Download panel CSV",
+    data=panel.to_csv(index=False).encode("utf-8"),
+    file_name=CFG.panel_out,
+    mime="text/csv",
+)
+
+# ============================================================
+# 9) 10-YEAR ANALYTICS (MONTHLY → ANNUALIZED)
 # ============================================================
 
 st.header("10-Year Fund Statistics (Monthly → Annualized)")
 
-# --- Prepare 10-year window using last available date in panel
-panel_stats = panel.copy()
-panel_stats["Date"] = pd.to_datetime(panel_stats["Date"])
+stats, cov_ann, corr, R_10y, audit_stats = compute_10y_analytics(panel)
 
-last_dt = panel_stats["Date"].max()
-ten_years_ago = (last_dt.to_period("M") - 120).to_timestamp("M")  # 120 months back
-panel_10y = panel_stats[panel_stats["Date"] > ten_years_ago].copy()
-
-st.caption(f"10-year window: {ten_years_ago.date()} → {last_dt.date()} (most recent available)")
-
-# --- Pivot to monthly log returns matrix: rows=Date, cols=Ticker
-R = (
-    panel_10y.pivot_table(index="Date", columns="Ticker", values="Log_Return", aggfunc="mean")
-    .sort_index()
-)
-
-# --- Basic data quality / coverage
-coverage = R.notna().sum().sort_values(ascending=False).to_frame("months_available")
-coverage["months_missing"] = R.shape[0] - coverage["months_available"]
-st.subheader("Coverage (months in 10-year window)")
+# Coverage
+st.subheader("Coverage (months available in the 10-year window)")
+coverage = stats[["Months_Available"]].sort_values("Months_Available", ascending=False)
 st.dataframe(coverage, use_container_width=True)
 
-# Optionally: drop tickers with too few observations
-min_months = st.slider("Minimum months required (drop funds below threshold)", 24, 120, 108)
-keep = coverage.index[coverage["months_available"] >= min_months].tolist()
-R = R[keep]
+min_months = st.slider("Minimum months required (filter funds)", 24, 120, 108)
+stats_f = stats[stats["Months_Available"] >= min_months].copy()
 
-if R.shape[1] < 1:
+if stats_f.empty:
     st.error("No funds meet the minimum months threshold. Lower the threshold or add more tickers.")
     st.stop()
 
-# --- Align: drop rows where all are NaN; then (audit choice) drop any rows with missing values
-R = R.dropna(how="all")
-drop_mode = st.selectbox(
-    "Missing data handling for matrices",
-    ["Listwise delete (drop any row with NaN)", "Pairwise (cov/corr use available pairs)"],
-    index=0
-)
+keep_tickers = stats_f.index.tolist()
+stats_f = stats_f.drop(columns=["Months_Available"])
 
-if drop_mode.startswith("Listwise"):
-    R_mat = R.dropna(axis=0, how="any")
-else:
-    R_mat = R  # cov() will be pairwise by default
-
-# ============================================================
-# A) Per-fund annualized stats (from monthly log returns)
-# ============================================================
-
-# Mean of monthly log returns
-mu_m_log = R.mean(skipna=True)
-
-# Geometric mean annual return: exp(12 * mean(log_r_m)) - 1
-geo_ann = np.expm1(12.0 * mu_m_log)
-
-# Monthly std dev of log returns; annualize with sqrt(12)
-sig_m = R.std(ddof=1, skipna=True)
-sig_ann = sig_m * math.sqrt(12.0)
-
-stats = pd.DataFrame({
-    "Geometric_Mean_Return_Annual": geo_ann,
-    "Volatility_Annual": sig_ann,
-    "Mean_LogReturn_Monthly": mu_m_log,
-    "Std_LogReturn_Monthly": sig_m,
-}).sort_index()
+# Filter matrices to kept tickers
+cov_ann_f = cov_ann.loc[keep_tickers, keep_tickers]
+corr_f = corr.loc[keep_tickers, keep_tickers]
 
 st.subheader("Per-Fund Annual Statistics (computed from monthly data)")
-st.dataframe(stats.style.format({
-    "Geometric_Mean_Return_Annual": "{:.4%}",
-    "Volatility_Annual": "{:.4%}",
-    "Mean_LogReturn_Monthly": "{:.6f}",
-    "Std_LogReturn_Monthly": "{:.6f}",
-}), use_container_width=True)
+st.dataframe(
+    stats_f.style.format({
+        "Geometric_Mean_Return_Annual": "{:.4%}",
+        "Volatility_Annual": "{:.4%}",
+        "Mean_LogReturn_Monthly": "{:.6f}",
+        "Std_LogReturn_Monthly": "{:.6f}",
+    }),
+    use_container_width=True
+)
 
-# ============================================================
-# B) Variance–Covariance & Correlation Matrices
-# ============================================================
+st.subheader("Audit Notes (10-year analytics)")
+st.code("\n".join([f"{k}: {v}" for k, v in audit_stats.items()]))
 
-cov_m = R_mat.cov()            # monthly covariance of log returns
-cov_ann = cov_m * 12.0         # annualized covariance (audit rule)
-
-corr = R_mat.corr()
-
-st.subheader("Annualized Variance–Covariance Matrix (from monthly cov × 12)")
-st.dataframe(cov_ann, use_container_width=True)
+st.subheader("Annualized Variance–Covariance Matrix (monthly cov × 12)")
+st.dataframe(cov_ann_f, use_container_width=True)
 
 st.subheader("Correlation Matrix (monthly)")
-st.dataframe(corr, use_container_width=True)
+st.dataframe(corr_f, use_container_width=True)
 
 # ============================================================
-# C) Portfolio Calculations
+# 10) PORTFOLIOS
 # ============================================================
 
 st.header("Portfolio Return & Volatility")
 
 st.markdown(
     """
-Enter one or more portfolios as weights.  
-**Format:** `TICKER=weight, TICKER=weight, ...`  
-Weights can be decimals and do not have to sum to 1 (we can normalize).
+**Input format:** one portfolio per line
+
+- `PORT1: VFINX=0.60, FCNTX=0.40`
+- `PORT2: VFINX=0.50, FCNTX=0.50`
+
+**Audit note:** Portfolio return is estimated as a weighted sum of the **fund-level**
+annual geometric mean returns computed from monthly data. Portfolio volatility uses
+the annualized covariance matrix.
 """
 )
 
-normalize = st.checkbox("Normalize weights to sum to 1", value=True)
+normalize_weights = st.checkbox("Normalize weights to sum to 1", value=True)
 
 port_text = st.text_area(
     "Portfolios (one per line)",
     value="PORT1: VFINX=0.60, FCNTX=0.40\nPORT2: VFINX=0.50, FCNTX=0.50",
-    height=140
+    height=140,
 )
-
-def parse_portfolios(text: str) -> Dict[str, Dict[str, float]]:
-    ports: Dict[str, Dict[str, float]] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if ":" in line:
-            name, rhs = line.split(":", 1)
-            name = name.strip()
-        else:
-            name, rhs = f"PORT{len(ports)+1}", line
-
-        weights: Dict[str, float] = {}
-        for part in rhs.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" not in part:
-                continue
-            t, w = part.split("=", 1)
-            t = t.strip()
-            w = float(w.strip())
-            weights[t] = w
-        if weights:
-            ports[name] = weights
-    return ports
 
 ports = parse_portfolios(port_text)
 
 if not ports:
     st.info("Add portfolio definitions above to compute portfolio stats.")
 else:
-    tickers_used = list(stats.index)
-    covA = cov_ann.loc[tickers_used, tickers_used]
+    # Use the filtered tickers set for portfolio computations
+    stats_use = stats_f.copy()
+    cov_use = cov_ann_f.copy()
 
-    results = []
-    for pname, wdict in ports.items():
-        # Build weight vector aligned to tickers_used
-        w = pd.Series(0.0, index=tickers_used)
-        for t, wt in wdict.items():
-            if t not in w.index:
-                # ignore unknown tickers (audit: explicit)
-                continue
-            w.loc[t] = wt
+    port_df = compute_portfolios(stats_use, cov_use, ports, normalize_weights)
 
-        if normalize:
-            s = w.sum()
-            if s != 0:
-                w = w / s
-
-        # Portfolio annual geometric mean (linear combination of annual geo means)
-        # Audit note: using fund-level annual geo estimates for portfolio mean estimate.
-        rp = float((w * stats["Geometric_Mean_Return_Annual"]).sum())
-
-        # Portfolio annual vol from annualized covariance
-        var_p = float(w.T @ covA.values @ w.values)
-        vol_p = math.sqrt(var_p) if var_p >= 0 else float("nan")
-
-        results.append({
-            "Portfolio": pname,
-            "Return_Annual_Geometric_Est": rp,
-            "Volatility_Annual": vol_p,
-            "Weights_Sum": float(w.sum()),
-            "Num_Funds_Used": int((w != 0).sum()),
-        })
-
-    port_df = pd.DataFrame(results).set_index("Portfolio")
     st.subheader("Portfolio Results")
-    st.dataframe(port_df.style.format({
-        "Return_Annual_Geometric_Est": "{:.4%}",
-        "Volatility_Annual": "{:.4%}",
-        "Weights_Sum": "{:.4f}",
-    }), use_container_width=True)
+    st.dataframe(
+        port_df.style.format({
+            "Return_Annual_Geometric_Est": "{:.4%}",
+            "Volatility_Annual": "{:.4%}",
+            "Weights_Sum": "{:.4f}",
+        }),
+        use_container_width=True
+    )
